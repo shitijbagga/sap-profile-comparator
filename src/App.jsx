@@ -401,6 +401,8 @@ const VIEW_MODES = [
   { id: "matching", label: "Matching" },
   { id: "different", label: "Different" },
   { id: "missing", label: "Missing" },
+  { id: "duplicates", label: "Duplicates" },
+  { id: "typemismatch", label: "Type Mismatch" },
 ];
 
 function LegendItem({ color, label }) {
@@ -586,6 +588,8 @@ export default function SAPProfileComparator() {
       if (viewMode === "matching") return r.status === "matching";
       if (viewMode === "different") return r.status === "different";
       if (viewMode === "missing") return r.status === "missing";
+      if (viewMode === "duplicates") return r.hasDuplicate;
+      if (viewMode === "typemismatch") return r.typeMismatch;
       if (viewMode === "baseline" && baselineId) {
         return Object.entries(r.baselineStatus || {}).some(
           ([pid, st]) => pid !== baselineId && (st === "diff" || st === "missing-in-profile" || st === "missing-in-baseline")
@@ -1021,7 +1025,7 @@ export default function SAPProfileComparator() {
 
           {/* Controls */}
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
-            <div style={{ display: "flex", background: "#ffffff", border: "1px solid #e2e5eb", borderRadius: 8, padding: 3 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", background: "#ffffff", border: "1px solid #e2e5eb", borderRadius: 8, padding: 3 }}>
               {VIEW_MODES.map((m) => (
                 <button
                   key={m.id}
