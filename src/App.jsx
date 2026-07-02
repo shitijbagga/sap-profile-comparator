@@ -1023,6 +1023,45 @@ export default function SAPProfileComparator() {
             ))}
           </div>
 
+          {/* Match / different / missing overview bar */}
+          {(counts.matching + counts.different + counts.missing) > 0 && (
+            <div style={{ marginBottom: 18 }}>
+              <div style={{ display: "flex", height: 14, borderRadius: 7, overflow: "hidden", border: "1px solid #e2e5eb" }}>
+                {counts.matching > 0 && (
+                  <div style={{ width: `${(counts.matching / (counts.matching + counts.different + counts.missing)) * 100}%`, background: "#15803d" }} title={`Matching: ${counts.matching}`}></div>
+                )}
+                {counts.different > 0 && (
+                  <div style={{ width: `${(counts.different / (counts.matching + counts.different + counts.missing)) * 100}%`, background: "#b45309" }} title={`Different: ${counts.different}`}></div>
+                )}
+                {counts.missing > 0 && (
+                  <div style={{ width: `${(counts.missing / (counts.matching + counts.different + counts.missing)) * 100}%`, background: "#dc2626" }} title={`Missing: ${counts.missing}`}></div>
+                )}
+              </div>
+              <div style={{ display: "flex", gap: 16, marginTop: 6, fontSize: 11.5, color: "#6b7280", flexWrap: "wrap" }}>
+                {(() => {
+                  const denom = counts.matching + counts.different + counts.missing;
+                  const pct = (n) => Math.round((n / denom) * 100);
+                  return (
+                    <>
+                      <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                        <span style={{ width: 8, height: 8, borderRadius: 2, background: "#15803d", display: "inline-block" }}></span>
+                        Matching {counts.matching} ({pct(counts.matching)}%)
+                      </span>
+                      <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                        <span style={{ width: 8, height: 8, borderRadius: 2, background: "#b45309", display: "inline-block" }}></span>
+                        Different {counts.different} ({pct(counts.different)}%)
+                      </span>
+                      <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                        <span style={{ width: 8, height: 8, borderRadius: 2, background: "#dc2626", display: "inline-block" }}></span>
+                        Missing {counts.missing} ({pct(counts.missing)}%)
+                      </span>
+                    </>
+                  );
+                })()}
+              </div>
+            </div>
+          )}
+
           {/* Controls */}
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
             <div style={{ display: "flex", flexWrap: "wrap", background: "#ffffff", border: "1px solid #e2e5eb", borderRadius: 8, padding: 3 }}>
