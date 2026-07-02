@@ -4,6 +4,7 @@ import {
   Download, Minus, Layers, EyeOff, Eye, Trash2, Save, FolderOpen,
   ChevronLeft, ChevronRight, ChevronDown, Pin, AlertOctagon,
   MessageSquare, Printer, ClipboardPaste, Target,
+  Wrench, CheckCircle2, ClipboardCheck, ListTodo,
 } from "lucide-react";
 
 // ---------- Parsing ----------
@@ -396,6 +397,107 @@ function buildPrintableReport({ profiles, rows, counts, excludedParams, baseline
 </body></html>`;
 }
 
+// ---------- Remediation plan report (proposed fixes, per profile) ----------
+function buildRemediationReport({ profiles, rows, proposals, excludedParams, baselineId }) {
+  const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const baselineProfile = profiles.find((p) => p.id === baselineId);
+
+  const actionable = rows.filter((r) => (r.status === "different" || r.status === "missing") && !excludedParams.has(r.name));
+  const resolvedRows = actionable.filter((r) => proposals.get(r.name)?.resolved);
+  const pendingRows = actionable.filter((r) => !proposals.get(r.name)?.resolved);
+
+  let totalActions = 0;
+  const byProfile = new Map(profiles.map((p) => [p.id, []]));
+  const noActionRows = [];
+  resolvedRows.forEach((r) => {
+    const proposal = proposals.get(r.name);
+    let hasAction = false;
+    profiles.forEach((p) => {
+      const entry = proposal.perProfile.get(p.id);
+      if (!entry || entry.action === "keep") return;
+      hasAction = true;
+      totalActions++;
+      const cell = r.cellByProfile[p.id];
+      byProfile.get(p.id).push({
+        name: r.name,
+        current: cell ? cell.value : "(not set)",
+        action: entry.action,
+        value: entry.value,
+        note: proposal.note,
+      });
+    });
+    if (!hasAction) noActionRows.push({ name: r.name, note: proposal.note });
+  });
+
+  const summaryCards = [
+    ["Parameters with differences", actionable.length, "#1f2530"],
+    ["Decided", resolvedRows.length, "#15803d"],
+    ["Still pending", pendingRows.length, "#dc2626"],
+    ["Total actions to apply", totalActions, "#2563eb"],
+  ].map(([label, val, color]) => `
+    <div style="border:1px solid #e2e5eb;border-radius:8px;padding:8px 12px;min-width:100px;">
+      <div style="font-size:18px;font-weight:700;color:${color};">${val}</div>
+      <div style="font-size:10px;color:#6b7280;margin-top:2px;">${esc(label)}</div>
+    </div>`).join("");
+
+  const profileSections = profiles.map((p) => {
+    const actions = byProfile.get(p.id);
+    if (!actions.length) return "";
+    const rowsHtml = actions.map((a) => {
+      const actionLabel = a.action === "remove" ? "Remove parameter" : `Set to: ${esc(a.value || "(empty)")}`;
+      const actionColor = a.action === "remove" ? "#fee2e2" : "#dbeafe";
+      const actionText = a.action === "remove" ? "#991b1b" : "#1e3a8a";
+      return `<tr>
+        <td style="padding:5px 8px;font-family:monospace;font-size:10.5px;border-bottom:1px solid #eef0f4;">${esc(a.name)}</td>
+        <td style="padding:5px 8px;font-family:monospace;font-size:10.5px;border-bottom:1px solid #eef0f4;color:#6b7280;">${esc(a.current)}</td>
+        <td style="padding:5px 8px;font-size:10.5px;border-bottom:1px solid #eef0f4;background:${actionColor};color:${actionText};font-weight:500;">${actionLabel}</td>
+        <td style="padding:5px 8px;font-size:10.5px;border-bottom:1px solid #eef0f4;color:#6b7280;">${esc(a.note || "—")}</td>
+      </tr>`;
+    }).join("");
+    return `
+      <h2 style="font-size:13px;margin:20px 0 8px;">${esc(p.name)}${p.sid ? " (SID: " + esc(p.sid) + ")" : ""}${p.id === baselineId ? " — baseline" : ""}</h2>
+      <table style="width:100%;border-collapse:collapse;"><thead><tr style="background:#1e3a5f;color:#fff;">
+        <th style="padding:5px 8px;text-align:left;font-size:10.5px;">Parameter</th>
+        <th style="padding:5px 8px;text-align:left;font-size:10.5px;">Current value</th>
+        <th style="padding:5px 8px;text-align:left;font-size:10.5px;">Proposed action</th>
+        <th style="padding:5px 8px;text-align:left;font-size:10.5px;">Note</th>
+      </tr></thead><tbody>${rowsHtml}</tbody></table>`;
+
+  }).join("");
+
+  const pendingHtml = pendingRows.length
+    ? `<ul style="columns:2;font-family:monospace;font-size:10.5px;color:#6b7280;margin:0;padding-left:16px;">${pendingRows.map((r) => `<li>${esc(r.name)}</li>`).join("")}</ul>`
+    : `<p style="font-size:10.5px;color:#6b7280;">Nothing pending — every difference has a decision.</p>`;
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"/><title>SAP Remediation Plan</title>
+<style>
+  @page { margin: 16mm 14mm; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; box-sizing: border-box; }
+  body { font-family: Arial, Helvetica, sans-serif; color: #1f2530; margin:0; padding: 0 0 30px; }
+  h1 { font-size: 17px; margin: 0 0 4px; }
+  h2 { break-after: avoid; }
+  tr { break-inside: avoid; }
+  thead { display: table-header-group; }
+</style></head>
+<body>
+  <h1>SAP Profile Analyzer — Remediation plan</h1>
+  <div style="font-size:10.5px;color:#6b7280;margin-bottom:12px;">
+    Generated ${esc(new Date().toLocaleString())} &nbsp;·&nbsp; Profiles: ${esc(profiles.map((p) => p.name).join(", "))}
+    ${baselineProfile ? ` &nbsp;·&nbsp; Baseline: <strong>${esc(baselineProfile.name)}</strong>` : ""}
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">${summaryCards}</div>
+  ${resolvedRows.length === 0 ? `<p style="font-size:11px;color:#6b7280;">No fixes have been proposed yet — open a parameter row, click "Propose fix", pick an action for at least one profile (or leave everything as "Keep as is" if no change is needed), then check "Mark as decided".</p>` : profileSections}
+  ${noActionRows.length ? `
+  <h2 style="font-size:13px;margin:20px 0 8px;">Reviewed — no action needed</h2>
+  <table style="width:100%;border-collapse:collapse;"><thead><tr style="background:#1e3a5f;color:#fff;">
+    <th style="padding:5px 8px;text-align:left;font-size:10.5px;">Parameter</th>
+    <th style="padding:5px 8px;text-align:left;font-size:10.5px;">Note</th>
+  </tr></thead><tbody>${noActionRows.map((r) => `<tr><td style="padding:5px 8px;font-family:monospace;font-size:10.5px;border-bottom:1px solid #eef0f4;">${esc(r.name)}</td><td style="padding:5px 8px;font-size:10.5px;border-bottom:1px solid #eef0f4;color:#6b7280;">${esc(r.note || "—")}</td></tr>`).join("")}</tbody></table>` : ""}
+  <h2 style="font-size:13px;margin:20px 0 8px;">Still pending a decision</h2>
+  ${pendingHtml}
+</body></html>`;
+}
+
 const VIEW_MODES = [
   { id: "all", label: "All" },
   { id: "matching", label: "Matching" },
@@ -430,6 +532,9 @@ export default function SAPProfileComparator() {
   const [groupByCategory, setGroupByCategory] = useState(true);
   const [collapsedGroups, setCollapsedGroups] = useState(() => new Set());
   const [jumpIndex, setJumpIndex] = useState(0);
+  const [pendingJumpIndex, setPendingJumpIndex] = useState(0);
+  const [proposals, setProposals] = useState(() => new Map());
+  const [openProposalRows, setOpenProposalRows] = useState(() => new Set());
   const fileInputRef = useRef(null);
   const sessionInputRef = useRef(null);
 
@@ -481,6 +586,8 @@ export default function SAPProfileComparator() {
     setBaselineId(null);
     setExcludedParams(new Map());
     setParseWarnings([]);
+    setProposals(new Map());
+    setOpenProposalRows(new Set());
   };
 
   const toggleExcluded = (name) => {
@@ -528,6 +635,59 @@ export default function SAPProfileComparator() {
       const next = new Set(prev);
       if (next.has(cat)) next.delete(cat);
       else next.add(cat);
+      return next;
+    });
+  };
+
+  const toggleProposalRow = (name) => {
+    setOpenProposalRows((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  };
+
+  const emptyProposal = () => ({ resolved: false, note: "", perProfile: new Map(profiles.map((p) => [p.id, { action: "keep", value: "" }])) });
+
+  const updateProposal = (name, updater) => {
+    setProposals((prev) => {
+      const next = new Map(prev);
+      const existing = next.get(name) || emptyProposal();
+      next.set(name, updater(existing));
+      return next;
+    });
+  };
+
+  const setProposalAction = (name, profileId, action) => updateProposal(name, (p) => {
+    const perProfile = new Map(p.perProfile);
+    const cur = perProfile.get(profileId) || { action: "keep", value: "" };
+    perProfile.set(profileId, { action, value: action === "set" ? cur.value : "" });
+    return { ...p, perProfile };
+  });
+
+  const setProposalValue = (name, profileId, value) => updateProposal(name, (p) => {
+    const perProfile = new Map(p.perProfile);
+    const cur = perProfile.get(profileId) || { action: "set", value: "" };
+    perProfile.set(profileId, { action: "set", value });
+    return { ...p, perProfile };
+  });
+
+  const applyBaselineToProposal = (name, profileId, baselineValue) => updateProposal(name, (p) => {
+    const perProfile = new Map(p.perProfile);
+    perProfile.set(profileId, { action: "set", value: baselineValue });
+    return { ...p, perProfile };
+  });
+
+  const setProposalNote = (name, note) => updateProposal(name, (p) => ({ ...p, note }));
+
+  const toggleProposalResolved = (name) => updateProposal(name, (p) => ({ ...p, resolved: !p.resolved }));
+
+  const clearProposal = (name) => {
+    setProposals((prev) => {
+      if (!prev.has(name)) return prev;
+      const next = new Map(prev);
+      next.delete(name);
       return next;
     });
   };
@@ -616,6 +776,8 @@ export default function SAPProfileComparator() {
 
   const counts = useMemo(() => {
     const nonExcluded = rows.filter((r) => !excludedParams.has(r.name));
+    const actionable = nonExcluded.filter((r) => r.status === "different" || r.status === "missing");
+    const decided = actionable.filter((r) => proposals.get(r.name)?.resolved).length;
     return {
       total: rows.length,
       matching: nonExcluded.filter((r) => r.status === "matching").length,
@@ -624,28 +786,34 @@ export default function SAPProfileComparator() {
       duplicates: rows.filter((r) => r.hasDuplicate).length,
       typeMismatches: nonExcluded.filter((r) => r.typeMismatch).length,
       excluded: excludedParams.size,
+      actionable: actionable.length,
+      decided,
+      pendingDecisions: actionable.length - decided,
     };
-  }, [rows, excludedParams]);
+  }, [rows, excludedParams, proposals]);
 
   const diffTargets = useMemo(
     () => filteredRows.filter((r) => (r.status === "different" || r.status === "missing" || r.typeMismatch) && !excludedParams.has(r.name)),
     [filteredRows, excludedParams]
   );
 
-  const jumpToNextDifference = () => {
-    if (!diffTargets.length) return;
-    const target = diffTargets[jumpIndex % diffTargets.length];
-    setJumpIndex((i) => (i + 1) % diffTargets.length);
-    const cat = categoryOf(target.name);
+  const pendingTargets = useMemo(
+    () => filteredRows.filter((r) => (r.status === "different" || r.status === "missing") && !excludedParams.has(r.name) && !proposals.get(r.name)?.resolved),
+    [filteredRows, excludedParams, proposals]
+  );
+
+  const scrollToRow = (name, expandProposal) => {
+    const cat = categoryOf(name);
     setCollapsedGroups((prev) => {
       if (!groupByCategory || !prev.has(cat)) return prev;
       const next = new Set(prev);
       next.delete(cat);
       return next;
     });
+    if (expandProposal) setOpenProposalRows((prev) => (prev.has(name) ? prev : new Set(prev).add(name)));
     requestAnimationFrame(() => {
       setTimeout(() => {
-        const el = document.getElementById(rowDomId(target.name));
+        const el = document.getElementById(rowDomId(name));
         if (el) {
           el.scrollIntoView({ behavior: "smooth", block: "center" });
           el.style.boxShadow = "inset 0 0 0 2px #2563eb";
@@ -655,15 +823,27 @@ export default function SAPProfileComparator() {
     });
   };
 
+  const jumpToNextDifference = () => {
+    if (!diffTargets.length) return;
+    const target = diffTargets[jumpIndex % diffTargets.length];
+    setJumpIndex((i) => (i + 1) % diffTargets.length);
+    scrollToRow(target.name, false);
+  };
+
+  const jumpToNextPending = () => {
+    if (!pendingTargets.length) return;
+    const target = pendingTargets[pendingJumpIndex % pendingTargets.length];
+    setPendingJumpIndex((i) => (i + 1) % pendingTargets.length);
+    scrollToRow(target.name, true);
+  };
+
   const exportReport = () => {
     if (!profiles.length) return;
     const xml = buildReportWorkbook({ profiles, rows, counts, excludedParams, baselineId });
     downloadBlob(`SAP_Profile_Comparison_${new Date().toISOString().slice(0, 10)}.xls`, xml, "application/vnd.ms-excel");
   };
 
-  const exportPDF = () => {
-    if (!profiles.length) return;
-    const html = buildPrintableReport({ profiles, rows, counts, excludedParams, baselineId });
+  const printHtml = (html) => {
     const iframe = document.createElement("iframe");
     iframe.style.position = "fixed";
     iframe.style.right = "0";
@@ -683,13 +863,27 @@ export default function SAPProfileComparator() {
     }, 300);
   };
 
+  const exportPDF = () => {
+    if (!profiles.length) return;
+    printHtml(buildPrintableReport({ profiles, rows, counts, excludedParams, baselineId }));
+  };
+
+  const exportRemediationPDF = () => {
+    if (!profiles.length) return;
+    printHtml(buildRemediationReport({ profiles, rows, proposals, excludedParams, baselineId }));
+  };
+
   const exportSession = () => {
     if (!profiles.length) return;
     const data = {
-      version: 2,
+      version: 3,
       exportedAt: new Date().toISOString(),
       baselineId,
       excludedParams: Array.from(excludedParams.entries()),
+      proposals: Array.from(proposals.entries()).map(([name, p]) => [
+        name,
+        { resolved: p.resolved, note: p.note, perProfile: Array.from(p.perProfile.entries()) },
+      ]),
       profiles: profiles.map((p) => ({
         id: p.id,
         name: p.name,
@@ -715,9 +909,16 @@ export default function SAPProfileComparator() {
       }));
       const rawExcl = Array.isArray(data.excludedParams) ? data.excludedParams : [];
       const exclMap = new Map(rawExcl.map((item) => (Array.isArray(item) ? item : [item, ""])));
+      const rawProposals = Array.isArray(data.proposals) ? data.proposals : [];
+      const proposalsMap = new Map(rawProposals.map(([name, p]) => [
+        name,
+        { resolved: !!p.resolved, note: p.note || "", perProfile: new Map(p.perProfile || []) },
+      ]));
       setProfiles(restored);
       setBaselineId(data.baselineId || null);
       setExcludedParams(exclMap);
+      setProposals(proposalsMap);
+      setOpenProposalRows(new Set());
       setParseWarnings([]);
     } catch (e) {
       setParseWarnings((prev) => [...prev, `Could not load session file: ${e.message}`]);
@@ -746,62 +947,162 @@ export default function SAPProfileComparator() {
     const excluded = excludedParams.has(r.name);
     const reason = excludedParams.get(r.name);
     const gutterColor = excluded ? "#d7dce6" : { matching: "#22c55e", different: "#f59e0b", missing: "#ef4444" }[r.status];
+    const canPropose = !excluded && (r.status === "different" || r.status === "missing");
+    const proposal = proposals.get(r.name);
+    const isOpen = openProposalRows.has(r.name);
     return (
-      <tr key={r.name} id={rowDomId(r.name)} style={{ borderTop: "1px solid #eef0f4", opacity: excluded ? 0.5 : 1 }}>
-        <td style={{ background: gutterColor, width: 4 }}></td>
-        <td style={{ padding: "8px 12px" }}>
-          <input type="checkbox" checked={excluded} onChange={() => toggleExcluded(r.name)} title="Exclude from difference analysis" />
-        </td>
-        <td className="mono" style={{ padding: "8px 12px", fontSize: 12.5, fontWeight: 500 }}>
-          {r.name}
-          {r.hasDuplicate && (
-            <span title="One or more profiles have duplicate entries for this parameter" style={{ marginLeft: 6, color: "#7e22ce", display: "inline-flex", verticalAlign: "middle" }}>
-              <Copy size={11} />
-            </span>
-          )}
-          {r.typeMismatch && (
-            <span title="Values differ in type (numeric vs text) across profiles — possible misconfiguration" style={{ marginLeft: 6, color: "#0d9488", display: "inline-flex", verticalAlign: "middle" }}>
-              <AlertOctagon size={11} />
-            </span>
-          )}
-          {excluded && reason && (
-            <span title={reason} style={{ marginLeft: 6, color: "#9aa1b0", display: "inline-flex", verticalAlign: "middle" }}>
-              <MessageSquare size={11} />
-            </span>
-          )}
-        </td>
-        {profiles.map((p) => {
-          const cell = r.cellByProfile[p.id];
-          let style = { text: "#1f2530", bg: "transparent" };
-          if (baselineId) {
-            style = baselineCellStyle(r.baselineStatus[p.id]);
-          } else if (cell) {
-            style = statusStyle[r.status] || style;
-          } else {
-            style = statusStyle.missing;
-          }
-          const title = cell?.occurrences?.length > 1
-            ? `${cell.occurrences.length} occurrences:\n` + cell.occurrences.map((o, i) => `#${i + 1} (line ${o.line}): ${o.value}`).join("\n")
-            : undefined;
-          return (
-            <td
-              key={p.id}
-              title={title}
-              className="mono"
-              style={{ padding: "8px 12px", fontSize: 12, color: style.text, background: style.bg, borderLeft: "1px solid #eef0f4" }}
-            >
-              {cell ? (
-                <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  {cell.value || <em style={{ color: "#9aa1b0" }}>(empty)</em>}
-                  {cell.isDuplicate && <AlertTriangle size={11} color="#7e22ce" />}
-                </span>
-              ) : (
-                <Minus size={12} color="#c3c9d3" />
-              )}
+      <React.Fragment key={r.name}>
+        <tr id={rowDomId(r.name)} style={{ borderTop: "1px solid #eef0f4", opacity: excluded ? 0.5 : 1 }}>
+          <td style={{ background: gutterColor, width: 4 }}></td>
+          <td style={{ padding: "8px 12px" }}>
+            <input type="checkbox" checked={excluded} onChange={() => toggleExcluded(r.name)} title="Exclude from difference analysis" />
+          </td>
+          <td className="mono" style={{ padding: "8px 12px", fontSize: 12.5, fontWeight: 500 }}>
+            {r.name}
+            {r.hasDuplicate && (
+              <span title="One or more profiles have duplicate entries for this parameter" style={{ marginLeft: 6, color: "#7e22ce", display: "inline-flex", verticalAlign: "middle" }}>
+                <Copy size={11} />
+              </span>
+            )}
+            {r.typeMismatch && (
+              <span title="Values differ in type (numeric vs text) across profiles — possible misconfiguration" style={{ marginLeft: 6, color: "#0d9488", display: "inline-flex", verticalAlign: "middle" }}>
+                <AlertOctagon size={11} />
+              </span>
+            )}
+            {excluded && reason && (
+              <span title={reason} style={{ marginLeft: 6, color: "#9aa1b0", display: "inline-flex", verticalAlign: "middle" }}>
+                <MessageSquare size={11} />
+              </span>
+            )}
+            {proposal?.resolved && (
+              <span title="A fix has been proposed for this parameter" style={{ marginLeft: 6, color: "#15803d", display: "inline-flex", verticalAlign: "middle" }}>
+                <CheckCircle2 size={11} />
+              </span>
+            )}
+            {canPropose && (
+              <button
+                onClick={() => toggleProposalRow(r.name)}
+                title="Propose a fix for this parameter"
+                style={{
+                  marginLeft: 8, display: "inline-flex", alignItems: "center", gap: 4, verticalAlign: "middle",
+                  background: isOpen ? "#eef2ff" : "#ffffff", border: `1px solid ${isOpen ? "#2563eb" : "#e2e5eb"}`,
+                  borderRadius: 6, padding: "2px 7px", fontSize: 10.5, fontWeight: 500, color: isOpen ? "#2563eb" : "#6b7280",
+                }}
+              >
+                <Wrench size={10} /> Propose fix
+              </button>
+            )}
+          </td>
+          {profiles.map((p) => {
+            const cell = r.cellByProfile[p.id];
+            let style = { text: "#1f2530", bg: "transparent" };
+            if (baselineId) {
+              style = baselineCellStyle(r.baselineStatus[p.id]);
+            } else if (cell) {
+              style = statusStyle[r.status] || style;
+            } else {
+              style = statusStyle.missing;
+            }
+            const title = cell?.occurrences?.length > 1
+              ? `${cell.occurrences.length} occurrences:\n` + cell.occurrences.map((o, i) => `#${i + 1} (line ${o.line}): ${o.value}`).join("\n")
+              : undefined;
+            return (
+              <td
+                key={p.id}
+                title={title}
+                className="mono"
+                style={{ padding: "8px 12px", fontSize: 12, color: style.text, background: style.bg, borderLeft: "1px solid #eef0f4" }}
+              >
+                {cell ? (
+                  <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    {cell.value || <em style={{ color: "#9aa1b0" }}>(empty)</em>}
+                    {cell.isDuplicate && <AlertTriangle size={11} color="#7e22ce" />}
+                  </span>
+                ) : (
+                  <Minus size={12} color="#c3c9d3" />
+                )}
+              </td>
+            );
+          })}
+        </tr>
+        {isOpen && canPropose && (
+          <tr>
+            <td colSpan={profiles.length + 3} style={{ padding: "12px 16px", background: "#f9fafb", borderTop: "1px solid #e2e5eb", borderBottom: "1px solid #e2e5eb" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: "#374151" }}>
+                  Propose fix for <span className="mono">{r.name}</span>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {profiles.map((p) => {
+                    const cell = r.cellByProfile[p.id];
+                    const draft = proposal?.perProfile.get(p.id) || { action: "keep", value: "" };
+                    const baseCell = baselineId ? r.cellByProfile[baselineId] : null;
+                    return (
+                      <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, flexWrap: "wrap" }}>
+                        <span className="mono" style={{ minWidth: 150, color: "#374151" }}>{p.name}</span>
+                        <span className="mono" style={{ minWidth: 130, color: "#9aa1b0" }}>{cell ? cell.value : "(not set)"}</span>
+                        <select
+                          value={draft.action}
+                          onChange={(e) => setProposalAction(r.name, p.id, e.target.value)}
+                          style={{ background: "#ffffff", border: "1px solid #e2e5eb", borderRadius: 6, padding: "5px 8px", fontSize: 12, color: "#1f2530" }}
+                        >
+                          <option value="keep">Keep as is</option>
+                          <option value="set">Set value…</option>
+                          <option value="remove">Remove parameter</option>
+                        </select>
+                        {draft.action === "set" && (
+                          <input
+                            value={draft.value}
+                            onChange={(e) => setProposalValue(r.name, p.id, e.target.value)}
+                            placeholder="Proposed value"
+                            className="mono"
+                            style={{ background: "#ffffff", border: "1px solid #e2e5eb", borderRadius: 6, padding: "5px 8px", fontSize: 12, color: "#1f2530", width: 160 }}
+                          />
+                        )}
+                        {baseCell && p.id !== baselineId && (
+                          <button
+                            onClick={() => applyBaselineToProposal(r.name, p.id, baseCell.value)}
+                            style={{ background: "none", border: "1px solid #e2e5eb", borderRadius: 6, padding: "4px 8px", fontSize: 11, color: "#2563eb" }}
+                          >
+                            Match baseline
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                <input
+                  value={proposal?.note || ""}
+                  onChange={(e) => setProposalNote(r.name, e.target.value)}
+                  placeholder="Notes for the Basis team (optional)"
+                  style={{ background: "#ffffff", border: "1px solid #e2e5eb", borderRadius: 6, padding: "6px 10px", fontSize: 12, color: "#1f2530" }}
+                />
+                <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#374151" }}>
+                    <input type="checkbox" checked={!!proposal?.resolved} onChange={() => toggleProposalResolved(r.name)} />
+                    Mark as decided
+                  </label>
+                  <span style={{ fontSize: 11, color: "#9aa1b0" }}>
+                    Set an action above for the profiles that need to change. If nothing needs to change, checking this alone lists it as "reviewed — no action needed" in the report.
+                  </span>
+                  <button
+                    onClick={() => clearProposal(r.name)}
+                    style={{ display: "flex", alignItems: "center", gap: 5, background: "none", border: "1px solid #e2e5eb", borderRadius: 6, padding: "5px 10px", fontSize: 12, color: "#6b7280" }}
+                  >
+                    <Trash2 size={11} /> Clear proposal
+                  </button>
+                  <button
+                    onClick={() => toggleProposalRow(r.name)}
+                    style={{ background: "none", border: "none", fontSize: 12, color: "#2563eb" }}
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
             </td>
-          );
-        })}
-      </tr>
+          </tr>
+        )}
+      </React.Fragment>
     );
   };
 
@@ -1015,6 +1316,7 @@ export default function SAPProfileComparator() {
               { label: "Duplicates", value: counts.duplicates, color: "#7e22ce" },
               { label: "Type mismatches", value: counts.typeMismatches, color: "#0d9488" },
               { label: "Excluded", value: counts.excluded, color: "#6b7280" },
+              { label: "Decided", value: `${counts.decided}/${counts.actionable}`, color: "#2563eb" },
             ].map((s) => (
               <div key={s.label} style={{ background: "#ffffff", border: "1px solid #e2e5eb", borderRadius: 8, padding: "10px 16px", minWidth: 88 }}>
                 <div className="mono" style={{ fontSize: 19, fontWeight: 600, color: s.color }}>{s.value}</div>
@@ -1135,6 +1437,14 @@ export default function SAPProfileComparator() {
             >
               <Printer size={13} /> PDF report
             </button>
+            <button
+              onClick={exportRemediationPDF}
+              disabled={counts.decided === 0}
+              title={counts.decided === 0 ? "Propose at least one fix and mark it as decided to enable this" : "Export the parameters you've decided how to fix, grouped by profile"}
+              style={{ display: "flex", alignItems: "center", gap: 6, background: "#ffffff", border: `1px solid ${counts.decided ? "#15803d" : "#e2e5eb"}`, borderRadius: 8, padding: "8px 14px", fontSize: 12.5, fontWeight: 600, color: counts.decided ? "#15803d" : "#b7bcc7" }}
+            >
+              <ClipboardCheck size={13} /> Remediation plan
+            </button>
           </div>
 
           {/* Exclusions panel */}
@@ -1180,6 +1490,7 @@ export default function SAPProfileComparator() {
               <LegendItem color="#0d9488" label="Type mismatch" />
               <LegendItem color="#2563eb" label="Baseline column" />
               <LegendItem color="#9ca3af" label="Excluded" />
+              <LegendItem color="#15803d" label="Fix decided" />
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <button
@@ -1204,6 +1515,14 @@ export default function SAPProfileComparator() {
                 style={{ display: "flex", alignItems: "center", gap: 5, background: "#ffffff", border: "1px solid #e2e5eb", borderRadius: 8, padding: "6px 10px", fontSize: 12, color: diffTargets.length ? "#2563eb" : "#c3c9d3" }}
               >
                 <Target size={12} /> Jump to next difference{diffTargets.length ? ` (${diffTargets.length})` : ""}
+              </button>
+              <button
+                onClick={jumpToNextPending}
+                disabled={!pendingTargets.length}
+                title="Jump to the next difference or missing parameter that doesn't have a decided proposal yet"
+                style={{ display: "flex", alignItems: "center", gap: 5, background: "#ffffff", border: "1px solid #e2e5eb", borderRadius: 8, padding: "6px 10px", fontSize: 12, color: pendingTargets.length ? "#2563eb" : "#c3c9d3" }}
+              >
+                <ListTodo size={12} /> Jump to next pending decision{pendingTargets.length ? ` (${pendingTargets.length})` : ""}
               </button>
             </div>
           </div>
