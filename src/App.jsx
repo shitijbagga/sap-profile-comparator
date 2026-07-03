@@ -4,7 +4,7 @@ import {
   Download, Minus, Layers, EyeOff, Eye, Trash2, Save, FolderOpen,
   ChevronLeft, ChevronRight, ChevronDown, Pin, AlertOctagon,
   MessageSquare, Printer, ClipboardPaste, Target,
-  Wrench, CheckCircle2, ClipboardCheck, ListTodo,
+  Wrench, CheckCircle2, ClipboardCheck, ListTodo, Fingerprint,
 } from "lucide-react";
 
 // ---------- Parsing ----------
@@ -61,6 +61,23 @@ function extractSid(params) {
     if (k.toUpperCase() === "SAPSYSTEMNAME") return v.value;
   }
   return null;
+}
+
+// Detects a profile's SAP SID from its content (SAPSYSTEMNAME) or, failing that, from the
+// conventional "<SID>_<InstanceName><Nr>_<hostname>" instance profile filename pattern.
+function detectSid(filename, params) {
+  const fromParam = extractSid(params);
+  if (fromParam) return fromParam.toUpperCase();
+  if (isDefaultProfile(filename)) return null;
+  const base = filename.replace(/\.[^.]+$/, "");
+  const match = base.match(/^([A-Za-z0-9]{2,8})_/);
+  return match ? match[1].toUpperCase() : null;
+}
+
+function normalizeForSid(value, sid) {
+  if (!sid) return value;
+  const escaped = sid.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return value.replace(new RegExp(escaped, "gi"), "{SID}");
 }
 
 function categoryOf(name) {
@@ -155,13 +172,14 @@ function buildReportWorkbook({ profiles, rows, counts, excludedParams, baselineI
     ssRow(ssCell("Missing in one or more profiles", "sLabel") + ssCell(counts.missing, "sMissing")),
     ssRow(ssCell("Parameters with duplicate entries", "sLabel") + ssCell(counts.duplicates, "sDuplicate")),
     ssRow(ssCell("Possible type mismatches (numeric vs text)", "sLabel") + ssCell(counts.typeMismatches, "sTypeMismatch")),
+    ssRow(ssCell("Matched after ignoring SID differences", "sLabel") + ssCell(counts.sidNormalized, "sBaselineRef")),
     ssRow(ssCell("Excluded from difference analysis", "sLabel") + ssCell(counts.excluded, "sExcluded")),
   ].join("");
   sheets.push(ssWorksheet("Summary", [320, 220], summaryRows));
 
   const fullHeader = ssRow(
     ssCell("Parameter", "sHeader") + ssCell("Status", "sHeader") + ssCell("Excluded", "sHeader") +
-    ssCell("Has Duplicates", "sHeader") + ssCell("Type Mismatch", "sHeader") +
+    ssCell("Has Duplicates", "sHeader") + ssCell("Type Mismatch", "sHeader") + ssCell("SID Normalized", "sHeader") +
     profiles.map((p) => ssCell(p.name + (p.id === baselineId ? " (BASELINE)" : ""), p.id === baselineId ? "sHeaderBaseline" : "sHeader")).join("")
   );
   const statusStyleMap = { matching: "sMatch", different: "sDiff", missing: "sMissing" };
@@ -174,6 +192,7 @@ function buildReportWorkbook({ profiles, rows, counts, excludedParams, baselineI
       ssCell(excluded ? "Yes" : "No", rowStyle),
       ssCell(r.hasDuplicate ? "Yes" : "No", r.hasDuplicate && !excluded ? "sDuplicate" : rowStyle),
       ssCell(r.typeMismatch ? "Yes" : "No", r.typeMismatch && !excluded ? "sTypeMismatch" : rowStyle),
+      ssCell(r.sidNormalized ? "Yes" : "No", r.sidNormalized && !excluded ? "sBaselineRef" : rowStyle),
     ];
     profiles.forEach((p) => {
       const cell = r.cellByProfile[p.id];
@@ -185,7 +204,7 @@ function buildReportWorkbook({ profiles, rows, counts, excludedParams, baselineI
     });
     return ssRow(cells.join(""));
   });
-  sheets.push(ssWorksheet("Full Comparison", [220, 90, 70, 100, 100, ...profiles.map(() => 150)], fullHeader + fullDataRows.join("")));
+  sheets.push(ssWorksheet("Full Comparison", [220, 90, 70, 100, 100, 100, ...profiles.map(() => 150)], fullHeader + fullDataRows.join("")));
 
   const diffRows = [];
   let diffHeaderCells;
@@ -286,6 +305,7 @@ function buildPrintableReport({ profiles, rows, counts, excludedParams, baseline
     ["Missing", counts.missing, "#dc2626"],
     ["Duplicates", counts.duplicates, "#7e22ce"],
     ["Type mismatches", counts.typeMismatches, "#0d9488"],
+    ["SID-normalized", counts.sidNormalized, "#2563eb"],
     ["Excluded", counts.excluded, "#6b7280"],
   ].map(([label, val, color]) => `
     <div style="border:1px solid #e2e5eb;border-radius:8px;padding:8px 12px;min-width:82px;">
@@ -523,6 +543,7 @@ export default function SAPProfileComparator() {
   const [search, setSearch] = useState("");
   const [excludedParams, setExcludedParams] = useState(() => new Map());
   const [showExcluded, setShowExcluded] = useState(true);
+  const [ignoreSidDiffs, setIgnoreSidDiffs] = useState(false);
   const [showExclusionsPanel, setShowExclusionsPanel] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [parseWarnings, setParseWarnings] = useState([]);
@@ -549,7 +570,7 @@ export default function SAPProfileComparator() {
         if (params.size === 0) {
           warnings.push(`${file.name}: no key = value parameters were found. Check the file format.`);
         }
-        const sid = isDefaultProfile(file.name) ? extractSid(params) : null;
+        const sid = detectSid(file.name, params);
         newProfiles.push({ id: uid(), name: file.name, params, size: file.size, sid });
       } catch (e) {
         warnings.push(`${file.name}: could not be read (${e.message}).`);
@@ -569,7 +590,7 @@ export default function SAPProfileComparator() {
     if (!pasteText.trim()) return;
     const params = parseProfileText(pasteText);
     const name = pasteName.trim() || `Pasted profile ${profiles.length + 1}`;
-    const sid = isDefaultProfile(name) ? extractSid(params) : null;
+    const sid = detectSid(name, params);
     setProfiles((prev) => [...prev, { id: uid(), name, params, size: pasteText.length, sid }]);
     setPasteName("");
     setPasteText("");
@@ -711,15 +732,29 @@ export default function SAPProfileComparator() {
       });
       const presentProfiles = profiles.filter((p) => cellByProfile[p.id]);
       let status;
+      let sidNormalized = false;
       if (presentProfiles.length < profiles.length) {
         status = "missing";
       } else {
         const uniqueVals = new Set(presentProfiles.map((p) => cellByProfile[p.id].value));
-        status = uniqueVals.size <= 1 ? "matching" : "different";
+        if (uniqueVals.size <= 1) {
+          status = "matching";
+        } else if (ignoreSidDiffs) {
+          const normVals = new Set(presentProfiles.map((p) => normalizeForSid(cellByProfile[p.id].value, p.sid)));
+          if (normVals.size <= 1) {
+            status = "matching";
+            sidNormalized = true;
+          } else {
+            status = "different";
+          }
+        } else {
+          status = "different";
+        }
       }
       let baselineStatus = null;
       if (baselineId) {
         const baseCell = cellByProfile[baselineId];
+        const baseProfile = profiles.find((p) => p.id === baselineId);
         baselineStatus = {};
         profiles.forEach((p) => {
           if (p.id === baselineId) {
@@ -730,16 +765,18 @@ export default function SAPProfileComparator() {
           if (!baseCell && !cell) baselineStatus[p.id] = "both-missing";
           else if (!baseCell) baselineStatus[p.id] = "missing-in-baseline";
           else if (!cell) baselineStatus[p.id] = "missing-in-profile";
-          else baselineStatus[p.id] = cell.value === baseCell.value ? "match" : "diff";
+          else if (cell.value === baseCell.value) baselineStatus[p.id] = "match";
+          else if (ignoreSidDiffs && normalizeForSid(cell.value, p.sid) === normalizeForSid(baseCell.value, baseProfile?.sid)) baselineStatus[p.id] = "match";
+          else baselineStatus[p.id] = "diff";
         });
       }
       const hasDuplicate = presentProfiles.some((p) => cellByProfile[p.id].isDuplicate);
       const presentVals = presentProfiles.map((p) => cellByProfile[p.id].value);
       const numFlags = presentVals.map(isNumericLike);
       const typeMismatch = presentVals.length > 1 && numFlags.some(Boolean) && numFlags.some((f) => !f);
-      return { name, cellByProfile, status, baselineStatus, hasDuplicate, typeMismatch };
+      return { name, cellByProfile, status, baselineStatus, hasDuplicate, typeMismatch, sidNormalized };
     });
-  }, [allParamNames, profiles, baselineId]);
+  }, [allParamNames, profiles, baselineId, ignoreSidDiffs]);
 
   const filteredRows = useMemo(() => {
     return rows.filter((r) => {
@@ -789,6 +826,7 @@ export default function SAPProfileComparator() {
       actionable: actionable.length,
       decided,
       pendingDecisions: actionable.length - decided,
+      sidNormalized: nonExcluded.filter((r) => r.sidNormalized).length,
     };
   }, [rows, excludedParams, proposals]);
 
@@ -967,6 +1005,11 @@ export default function SAPProfileComparator() {
             {r.typeMismatch && (
               <span title="Values differ in type (numeric vs text) across profiles — possible misconfiguration" style={{ marginLeft: 6, color: "#0d9488", display: "inline-flex", verticalAlign: "middle" }}>
                 <AlertOctagon size={11} />
+              </span>
+            )}
+            {r.sidNormalized && (
+              <span title="Values only differ by each profile's own SID (e.g. xs4.example.com vs ps4.example.com) — treated as matching because 'Ignore SID differences' is on" style={{ marginLeft: 6, fontSize: 9, fontWeight: 700, color: "#2563eb", background: "#eef2ff", borderRadius: 4, padding: "1px 4px", verticalAlign: "middle" }}>
+                SID
               </span>
             )}
             {excluded && reason && (
@@ -1268,7 +1311,7 @@ export default function SAPProfileComparator() {
               >
                 <FileText size={13} color="#8993a4" />
                 <span className="mono" style={{ fontWeight: 500 }}>
-                  {p.name}{p.sid ? <span style={{ color: "#2563eb" }}> (SID: {p.sid})</span> : null}
+                  {p.name}{p.sid && isDefaultProfile(p.name) ? <span style={{ color: "#2563eb" }}> (SID: {p.sid})</span> : null}
                 </span>
                 <span style={{ color: "#9aa1b0" }}>· {p.params.size} params</span>
                 {dupCount > 0 && (
@@ -1317,6 +1360,7 @@ export default function SAPProfileComparator() {
               { label: "Type mismatches", value: counts.typeMismatches, color: "#0d9488" },
               { label: "Excluded", value: counts.excluded, color: "#6b7280" },
               { label: "Decided", value: `${counts.decided}/${counts.actionable}`, color: "#2563eb" },
+              ...(ignoreSidDiffs ? [{ label: "SID-normalized", value: counts.sidNormalized, color: "#2563eb" }] : []),
             ].map((s) => (
               <div key={s.label} style={{ background: "#ffffff", border: "1px solid #e2e5eb", borderRadius: 8, padding: "10px 16px", minWidth: 88 }}>
                 <div className="mono" style={{ fontSize: 19, fontWeight: 600, color: s.color }}>{s.value}</div>
@@ -1423,6 +1467,16 @@ export default function SAPProfileComparator() {
               <MessageSquare size={13} /> Exclusions{excludedParams.size > 0 ? ` (${excludedParams.size})` : ""}
             </button>
 
+            {profiles.some((p) => p.sid) && (
+              <button
+                onClick={() => setIgnoreSidDiffs((v) => !v)}
+                title="Treat values that only differ because each profile's own SID appears in them (e.g. xs4.example.com vs ps4.example.com) as matching, not different"
+                style={{ display: "flex", alignItems: "center", gap: 6, background: ignoreSidDiffs ? "#eef2ff" : "#ffffff", border: "1px solid #e2e5eb", borderRadius: 8, padding: "7px 10px", fontSize: 12.5, color: ignoreSidDiffs ? "#2563eb" : "#6b7280" }}
+              >
+                <Fingerprint size={13} /> Ignore SID differences
+              </button>
+            )}
+
             <div style={{ flex: 1 }} />
 
             <button
@@ -1491,6 +1545,7 @@ export default function SAPProfileComparator() {
               <LegendItem color="#2563eb" label="Baseline column" />
               <LegendItem color="#9ca3af" label="Excluded" />
               <LegendItem color="#15803d" label="Fix decided" />
+              {ignoreSidDiffs && <LegendItem color="#2563eb" label="Matched after ignoring SID" />}
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <button
@@ -1543,7 +1598,7 @@ export default function SAPProfileComparator() {
                             {p.id === baselineId && <Star size={11} fill="#2563eb" />}
                             {p.name}
                           </span>
-                          {p.sid && <span style={{ fontSize: 10, fontWeight: 600, color: "#2563eb" }}>SID: {p.sid}</span>}
+                          {p.sid && isDefaultProfile(p.name) && <span style={{ fontSize: 10, fontWeight: 600, color: "#2563eb" }}>SID: {p.sid}</span>}
                           <span style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
                             <button onClick={() => moveProfile(p.id, -1)} title="Move column left" style={{ background: "none", border: "none", padding: 0, display: "flex" }}>
                               <ChevronLeft size={12} color="#b7bcc7" />
