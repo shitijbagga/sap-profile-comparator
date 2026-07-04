@@ -536,6 +536,10 @@ function LegendItem({ color, label }) {
   );
 }
 
+// ---------- Branding — edit these two lines to put your own name on the app ----------
+const BRAND_NAME = "Shitij Bagga";
+const BRAND_EMAIL = "shitij.bagga@hotmail.com";
+
 export default function SAPProfileComparator() {
   const [profiles, setProfiles] = useState([]);
   const [baselineId, setBaselineId] = useState(null);
@@ -1648,6 +1652,11 @@ export default function SAPProfileComparator() {
           </div>
         </>
       )}
+
+      <div style={{ marginTop: 32, paddingTop: 16, borderTop: "1px solid #e2e5eb", textAlign: "center", fontSize: 11.5, color: "#9aa1b0" }}>
+        SAP Profile Analyzer · Built by {BRAND_NAME} ·{" "}
+        <a href={`mailto:${BRAND_EMAIL}`} style={{ color: "#9aa1b0" }}>{BRAND_EMAIL}</a>
+      </div>
     </div>
   );
 }
