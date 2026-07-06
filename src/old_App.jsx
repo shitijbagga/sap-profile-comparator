@@ -928,7 +928,7 @@ export default function SAPProfileComparator() {
     printHtml(buildRemediationReport({ profiles, rows, proposals, excludedParams, baselineId }));
   };
 
-  const exportSession = async () => {
+  const exportSession = () => {
     if (!profiles.length) return;
     const data = {
       version: 3,
@@ -947,25 +947,7 @@ export default function SAPProfileComparator() {
         params: Array.from(p.params.entries()),
       })),
     };
-    const json = JSON.stringify(data, null, 2);
-    const suggestedName = `SAP_Comparison_Session_${new Date().toISOString().slice(0, 10)}.json`;
-
-    if (window.showSaveFilePicker) {
-      try {
-        const handle = await window.showSaveFilePicker({
-          suggestedName,
-          types: [{ description: "SAP Profile Analyzer session", accept: { "application/json": [".json"] } }],
-        });
-        const writable = await handle.createWritable();
-        await writable.write(json);
-        await writable.close();
-        return;
-      } catch (e) {
-        if (e.name === "AbortError") return; // user cancelled the picker — do nothing
-        // any other error (e.g. picker unsupported in this context) falls through to the plain download below
-      }
-    }
-    downloadBlob(suggestedName, json, "application/json");
+    downloadBlob(`SAP_Comparison_Session_${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(data, null, 2), "application/json");
   };
 
   const importSession = async (file) => {
@@ -1120,9 +1102,7 @@ export default function SAPProfileComparator() {
                     const baseCell = baselineId ? r.cellByProfile[baselineId] : null;
                     return (
                       <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, flexWrap: "wrap" }}>
-                        <span className="mono" style={{ minWidth: 150, color: "#374151" }}>
-                          {p.name}{p.sid && isDefaultProfile(p.name) ? <span style={{ color: "#2563eb" }}> (SID: {p.sid})</span> : null}
-                        </span>
+                        <span className="mono" style={{ minWidth: 150, color: "#374151" }}>{p.name}</span>
                         <span className="mono" style={{ minWidth: 130, color: "#9aa1b0" }}>{cell ? cell.value : "(not set)"}</span>
                         <select
                           value={draft.action}
@@ -1515,7 +1495,7 @@ export default function SAPProfileComparator() {
                 title="Treat values that only differ because each profile's own SID appears in them (e.g. xs4.example.com vs ps4.example.com) as matching, not different"
                 style={{ display: "flex", alignItems: "center", gap: 6, background: ignoreSidDiffs ? "#eef2ff" : "#ffffff", border: "1px solid #e2e5eb", borderRadius: 8, padding: "7px 10px", fontSize: 12.5, color: ignoreSidDiffs ? "#2563eb" : "#6b7280" }}
               >
-                <Fingerprint size={13} /> {ignoreSidDiffs ? "Ignoring SID differences" : "Ignore SID differences"}
+                <Fingerprint size={13} /> Ignore SID differences
               </button>
             )}
 
