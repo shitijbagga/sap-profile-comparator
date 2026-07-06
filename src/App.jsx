@@ -65,9 +65,11 @@ function extractSid(params) {
 
 // Detects a profile's SAP SID from its content (SAPSYSTEMNAME) or, failing that, from the
 // conventional "<SID>_<InstanceName><Nr>_<hostname>" instance profile filename pattern.
+// SAP SIDs are always exactly 3 characters; anything wildly longer than that is rejected
+// rather than trusted, since it later gets used to build a RegExp for SID normalization.
 function detectSid(filename, params) {
   const fromParam = extractSid(params);
-  if (fromParam) return fromParam.toUpperCase();
+  if (fromParam && fromParam.length <= 12) return fromParam.toUpperCase();
   if (isDefaultProfile(filename)) return null;
   const base = filename.replace(/\.[^.]+$/, "");
   const match = base.match(/^([A-Za-z0-9]{2,8})_/);
@@ -75,7 +77,7 @@ function detectSid(filename, params) {
 }
 
 function normalizeForSid(value, sid) {
-  if (!sid) return value;
+  if (!sid || sid.length > 12) return value;
   const escaped = sid.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return value.replace(new RegExp(escaped, "gi"), "{SID}");
 }
@@ -98,6 +100,12 @@ function rowDomId(name) {
 function uid() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
+
+// SAP profiles are plain text and normally well under 1MB; anything drastically larger is
+// almost certainly the wrong file selected by mistake, so it's rejected before parsing rather
+// than risking the tab hanging on a huge input.
+const MAX_PROFILE_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+const MAX_SESSION_FILE_SIZE = 25 * 1024 * 1024; // 25MB — a session bundles multiple profiles + proposals
 
 function downloadBlob(filename, content, mime) {
   const blob = new Blob([content], { type: mime });
@@ -539,6 +547,7 @@ function LegendItem({ color, label }) {
 // ---------- Branding — edit these two lines to put your own name on the app ----------
 const BRAND_NAME = "Shitij Bagga";
 const BRAND_EMAIL = "shitij.bagga@hotmail.com";
+const BRAND_LINKEDIN = "http://www.linkedin.com/in/shitijbagga";
 
 export default function SAPProfileComparator() {
   const [profiles, setProfiles] = useState([]);
@@ -569,6 +578,10 @@ export default function SAPProfileComparator() {
     const newProfiles = [];
     for (const file of files) {
       try {
+        if (file.size > MAX_PROFILE_FILE_SIZE) {
+          warnings.push(`${file.name}: file is ${(file.size / (1024 * 1024)).toFixed(1)}MB, which is larger than the ${MAX_PROFILE_FILE_SIZE / (1024 * 1024)}MB limit for a profile file. Skipped — check you selected the right file.`);
+          continue;
+        }
         const text = await file.text();
         const params = parseProfileText(text);
         if (params.size === 0) {
@@ -939,6 +952,9 @@ export default function SAPProfileComparator() {
 
   const importSession = async (file) => {
     try {
+      if (file.size > MAX_SESSION_FILE_SIZE) {
+        throw new Error(`file is ${(file.size / (1024 * 1024)).toFixed(1)}MB, which is larger than the ${MAX_SESSION_FILE_SIZE / (1024 * 1024)}MB limit for a saved session.`);
+      }
       const text = await file.text();
       const data = JSON.parse(text);
       if (!data.profiles) throw new Error("File does not look like a saved comparison session.");
@@ -1156,7 +1172,7 @@ export default function SAPProfileComparator() {
   return (
     <div
       style={{
-        fontFamily: "'Inter', -apple-system, sans-serif",
+        fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
         background: "#f6f7fb",
         color: "#1f2530",
         minHeight: "100%",
@@ -1165,12 +1181,11 @@ export default function SAPProfileComparator() {
       }}
     >
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
         * { box-sizing: border-box; }
         ::-webkit-scrollbar { width: 10px; height: 10px; }
         ::-webkit-scrollbar-track { background: #eef0f4; }
         ::-webkit-scrollbar-thumb { background: #cbd2de; border-radius: 6px; }
-        .mono { font-family: 'JetBrains Mono', monospace; }
+        .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
         button { font-family: inherit; cursor: pointer; }
         input, select, textarea { font-family: inherit; }
         table { border-collapse: collapse; width: 100%; }
@@ -1656,6 +1671,8 @@ export default function SAPProfileComparator() {
       <div style={{ marginTop: 32, paddingTop: 16, borderTop: "1px solid #e2e5eb", textAlign: "center", fontSize: 11.5, color: "#9aa1b0" }}>
         SAP Profile Analyzer · Built by {BRAND_NAME} ·{" "}
         <a href={`mailto:${BRAND_EMAIL}`} style={{ color: "#9aa1b0" }}>{BRAND_EMAIL}</a>
+        {" · "}
+        <a href={BRAND_LINKEDIN} target="_blank" rel="noopener noreferrer" style={{ color: "#9aa1b0" }}>{BRAND_LINKEDIN}</a>
       </div>
     </div>
   );
