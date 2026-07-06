@@ -1227,7 +1227,10 @@ export default function SAPProfileComparator() {
         </div>
       </div>
       <p style={{ color: "#6b7280", fontSize: 13.5, margin: "0 0 22px 46px" }}>
-        Upload any SAP profile files to compare them side by side, surface differences and duplicates, export a report for the Basis team, and save comparisons to revisit later.
+        Upload any SAP profile files to compare them side by side, surface differences and duplicates, export a report for the Basis team, and save comparisons to revisit later.{" "}
+        <a href="/SAP_Profile_Analyzer_User_Guide.pdf" target="_blank" rel="noopener noreferrer" style={{ color: "#2563eb", whiteSpace: "nowrap" }}>
+          New here? Read the user guide
+        </a>
       </p>
 
       {/* Upload zone */}
