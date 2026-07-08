@@ -1,10 +1,10 @@
-import React, { useState, useMemo, useRef, useCallback } from "react";
+import React, { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import {
   Upload, X, FileText, Star, StarOff, AlertTriangle, Copy, Search,
   Download, Minus, Layers, EyeOff, Eye, Trash2, Save, FolderOpen,
   ChevronLeft, ChevronRight, ChevronDown, Pin, AlertOctagon,
   MessageSquare, Printer, ClipboardPaste, Target,
-  Wrench, CheckCircle2, ClipboardCheck, ListTodo, Fingerprint,
+  Wrench, CheckCircle2, ClipboardCheck, ListTodo, Fingerprint, Sun, Moon, Contrast,
 } from "lucide-react";
 
 // ---------- Parsing ----------
@@ -549,6 +549,61 @@ const BRAND_NAME = "Shitij Bagga";
 const BRAND_EMAIL = "shitij.bagga@hotmail.com";
 const BRAND_LINKEDIN = "http://www.linkedin.com/in/shitijbagga";
 
+// ---------- Themes ----------
+// Light and Dark share the same status hues (green/amber/red); Colorblind-safe swaps them
+// for an Okabe-Ito-inspired blue/orange/purple palette so matching/different/missing stay
+// distinguishable for red-green color blindness. Report exports (Excel/PDF) are intentionally
+// NOT themed — they stay a stable, printable design regardless of the on-screen theme.
+const THEMES = {
+  light: {
+    bg: "#f6f7fb", panelBg: "#ffffff", panelBgAlt: "#f5f6f9",
+    border: "#e2e5eb", borderLight: "#eef0f4",
+    textPrimary: "#1f2530", textSecondary: "#374151", textMuted: "#6b7280", textFaint: "#9aa1b0", textFainter: "#c3c9d3",
+    accent: "#2563eb", accentRgb: "37,99,235", accentBg: "#eef2ff", accentBorder: "#dbe2f5",
+    scrollTrack: "#eef0f4", scrollThumb: "#cbd2de",
+    matchText: "#15803d", matchGutter: "#22c55e", matchRgb: "21,128,61",
+    diffText: "#b45309", diffGutter: "#f59e0b", diffRgb: "180,83,9",
+    missingText: "#dc2626", missingGutter: "#ef4444", missingRgb: "220,38,38",
+    duplicateText: "#7e22ce", typeMismatchText: "#0d9488", excludedText: "#6b7280",
+    warningBg: "#fffbeb", warningBorder: "#fde68a", warningText: "#92400e",
+  },
+  dark: {
+    bg: "#12161d", panelBg: "#1a1f29", panelBgAlt: "#20262f",
+    border: "#2b3240", borderLight: "#252b36",
+    textPrimary: "#e7ebf1", textSecondary: "#c3cad6", textMuted: "#98a2b3", textFaint: "#6b7688", textFainter: "#4b5563",
+    accent: "#5b9df4", accentRgb: "91,157,244", accentBg: "rgba(91,157,244,0.12)", accentBorder: "rgba(91,157,244,0.35)",
+    scrollTrack: "#20262f", scrollThumb: "#3a4250",
+    matchText: "#4ade80", matchGutter: "#22c55e", matchRgb: "74,222,128",
+    diffText: "#fbbf24", diffGutter: "#f59e0b", diffRgb: "251,191,36",
+    missingText: "#f87171", missingGutter: "#ef4444", missingRgb: "248,113,113",
+    duplicateText: "#c084fc", typeMismatchText: "#2dd4bf", excludedText: "#8993a4",
+    warningBg: "rgba(245,158,11,0.1)", warningBorder: "rgba(245,158,11,0.35)", warningText: "#fbbf24",
+  },
+  colorblind: {
+    bg: "#f6f7fb", panelBg: "#ffffff", panelBgAlt: "#f5f6f9",
+    border: "#e2e5eb", borderLight: "#eef0f4",
+    textPrimary: "#1f2530", textSecondary: "#374151", textMuted: "#6b7280", textFaint: "#9aa1b0", textFainter: "#c3c9d3",
+    accent: "#0072B2", accentRgb: "0,114,178", accentBg: "#e6f0f7", accentBorder: "#b3d1e6",
+    scrollTrack: "#eef0f4", scrollThumb: "#cbd2de",
+    matchText: "#0072B2", matchGutter: "#0072B2", matchRgb: "0,114,178",
+    diffText: "#b8730a", diffGutter: "#E69F00", diffRgb: "230,159,0",
+    missingText: "#a5477a", missingGutter: "#CC79A7", missingRgb: "204,121,167",
+    duplicateText: "#8a7600", typeMismatchText: "#009E73", excludedText: "#6b7280",
+    warningBg: "#fff7e6", warningBorder: "#f0cf7a", warningText: "#8a5a00",
+  },
+};
+
+function getInitialTheme() {
+  try {
+    const saved = window.localStorage.getItem("sap-analyzer-theme");
+    if (saved && THEMES[saved]) return saved;
+    if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) return "dark";
+  } catch (e) {
+    // localStorage/matchMedia unavailable — fall back to light
+  }
+  return "light";
+}
+
 export default function SAPProfileComparator() {
   const [profiles, setProfiles] = useState([]);
   const [baselineId, setBaselineId] = useState(null);
@@ -569,8 +624,23 @@ export default function SAPProfileComparator() {
   const [pendingJumpIndex, setPendingJumpIndex] = useState(0);
   const [proposals, setProposals] = useState(() => new Map());
   const [openProposalRows, setOpenProposalRows] = useState(() => new Set());
+  const [theme, setTheme] = useState(getInitialTheme);
   const fileInputRef = useRef(null);
   const sessionInputRef = useRef(null);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("sap-analyzer-theme", theme);
+    } catch (e) {
+      // localStorage unavailable (e.g. private browsing) — theme just won't persist
+    }
+  }, [theme]);
+
+  const THEME_ORDER = ["light", "dark", "colorblind"];
+  const cycleTheme = () => {
+    setTheme((prev) => THEME_ORDER[(THEME_ORDER.indexOf(prev) + 1) % THEME_ORDER.length]);
+  };
+  const t = THEMES[theme];
 
   const handleFiles = useCallback(async (fileList) => {
     const files = Array.from(fileList);
@@ -871,7 +941,7 @@ export default function SAPProfileComparator() {
         const el = document.getElementById(rowDomId(name));
         if (el) {
           el.scrollIntoView({ behavior: "smooth", block: "center" });
-          el.style.boxShadow = "inset 0 0 0 2px #2563eb";
+          el.style.boxShadow = `inset 0 0 0 2px ${t.accent}`;
           setTimeout(() => { el.style.boxShadow = ""; }, 1400);
         }
       }, 60);
@@ -1002,61 +1072,61 @@ export default function SAPProfileComparator() {
   };
 
   const statusStyle = {
-    matching: { text: "#15803d", bg: "rgba(21,128,61,0.08)" },
-    different: { text: "#b45309", bg: "rgba(180,83,9,0.09)" },
-    missing: { text: "#dc2626", bg: "rgba(220,38,38,0.08)" },
+    matching: { text: t.matchText, bg: `rgba(${t.matchRgb},0.08)` },
+    different: { text: t.diffText, bg: `rgba(${t.diffRgb},0.09)` },
+    missing: { text: t.missingText, bg: `rgba(${t.missingRgb},0.08)` },
   };
 
   const baselineCellStyle = (st) => {
     switch (st) {
-      case "baseline": return { text: "#1e3a5f", bg: "rgba(37,99,235,0.07)" };
-      case "match": return { text: "#15803d", bg: "rgba(21,128,61,0.08)" };
-      case "diff": return { text: "#b45309", bg: "rgba(180,83,9,0.1)" };
-      case "missing-in-profile": return { text: "#dc2626", bg: "rgba(220,38,38,0.1)" };
-      case "missing-in-baseline": return { text: "#7e22ce", bg: "rgba(126,34,206,0.08)" };
-      case "both-missing": return { text: "#9ca3af", bg: "transparent" };
-      default: return { text: "#9ca3af", bg: "transparent" };
+      case "baseline": return { text: t.accent, bg: `rgba(${t.accentRgb},0.07)` };
+      case "match": return { text: t.matchText, bg: `rgba(${t.matchRgb},0.08)` };
+      case "diff": return { text: t.diffText, bg: `rgba(${t.diffRgb},0.1)` };
+      case "missing-in-profile": return { text: t.missingText, bg: `rgba(${t.missingRgb},0.1)` };
+      case "missing-in-baseline": return { text: t.duplicateText, bg: `rgba(${t.missingRgb},0.08)` };
+      case "both-missing": return { text: t.textFaint, bg: "transparent" };
+      default: return { text: t.textFaint, bg: "transparent" };
     }
   };
 
   const renderRow = (r) => {
     const excluded = excludedParams.has(r.name);
     const reason = excludedParams.get(r.name);
-    const gutterColor = excluded ? "#d7dce6" : { matching: "#22c55e", different: "#f59e0b", missing: "#ef4444" }[r.status];
+    const gutterColor = excluded ? t.textFainter : { matching: t.matchGutter, different: t.diffGutter, missing: t.missingGutter }[r.status];
     const canPropose = !excluded && (r.status === "different" || r.status === "missing");
     const proposal = proposals.get(r.name);
     const isOpen = openProposalRows.has(r.name);
     return (
       <React.Fragment key={r.name}>
-        <tr id={rowDomId(r.name)} style={{ borderTop: "1px solid #eef0f4", opacity: excluded ? 0.5 : 1 }}>
+        <tr id={rowDomId(r.name)} style={{ borderTop: `1px solid ${t.borderLight}`, opacity: excluded ? 0.5 : 1 }}>
           <td style={{ background: gutterColor, width: 4 }}></td>
           <td style={{ padding: "8px 12px" }}>
             <input type="checkbox" checked={excluded} onChange={() => toggleExcluded(r.name)} title="Exclude from difference analysis" />
           </td>
-          <td className="mono" style={{ padding: "8px 12px", fontSize: 12.5, fontWeight: 500 }}>
+          <td className="mono" style={{ padding: "8px 12px", fontSize: 12.5, fontWeight: 500, color: t.textPrimary }}>
             {r.name}
             {r.hasDuplicate && (
-              <span title="One or more profiles have duplicate entries for this parameter" style={{ marginLeft: 6, color: "#7e22ce", display: "inline-flex", verticalAlign: "middle" }}>
+              <span title="One or more profiles have duplicate entries for this parameter" style={{ marginLeft: 6, color: t.duplicateText, display: "inline-flex", verticalAlign: "middle" }}>
                 <Copy size={11} />
               </span>
             )}
             {r.typeMismatch && (
-              <span title="Values differ in type (numeric vs text) across profiles — possible misconfiguration" style={{ marginLeft: 6, color: "#0d9488", display: "inline-flex", verticalAlign: "middle" }}>
+              <span title="Values differ in type (numeric vs text) across profiles — possible misconfiguration" style={{ marginLeft: 6, color: t.typeMismatchText, display: "inline-flex", verticalAlign: "middle" }}>
                 <AlertOctagon size={11} />
               </span>
             )}
             {r.sidNormalized && (
-              <span title="Values only differ by each profile's own SID (e.g. xs4.example.com vs ps4.example.com) — treated as matching because 'Ignore SID differences' is on" style={{ marginLeft: 6, fontSize: 9, fontWeight: 700, color: "#2563eb", background: "#eef2ff", borderRadius: 4, padding: "1px 4px", verticalAlign: "middle" }}>
+              <span title="Values only differ by each profile's own SID (e.g. xs4.example.com vs ps4.example.com) — treated as matching because 'Ignore SID differences' is on" style={{ marginLeft: 6, fontSize: 9, fontWeight: 700, color: t.accent, background: t.accentBg, borderRadius: 4, padding: "1px 4px", verticalAlign: "middle" }}>
                 SID
               </span>
             )}
             {excluded && reason && (
-              <span title={reason} style={{ marginLeft: 6, color: "#9aa1b0", display: "inline-flex", verticalAlign: "middle" }}>
+              <span title={reason} style={{ marginLeft: 6, color: t.textFaint, display: "inline-flex", verticalAlign: "middle" }}>
                 <MessageSquare size={11} />
               </span>
             )}
             {proposal?.resolved && (
-              <span title="A fix has been proposed for this parameter" style={{ marginLeft: 6, color: "#15803d", display: "inline-flex", verticalAlign: "middle" }}>
+              <span title="A fix has been proposed for this parameter" style={{ marginLeft: 6, color: t.matchText, display: "inline-flex", verticalAlign: "middle" }}>
                 <CheckCircle2 size={11} />
               </span>
             )}
@@ -1066,8 +1136,8 @@ export default function SAPProfileComparator() {
                 title="Propose a fix for this parameter"
                 style={{
                   marginLeft: 8, display: "inline-flex", alignItems: "center", gap: 4, verticalAlign: "middle",
-                  background: isOpen ? "#eef2ff" : "#ffffff", border: `1px solid ${isOpen ? "#2563eb" : "#e2e5eb"}`,
-                  borderRadius: 6, padding: "2px 7px", fontSize: 10.5, fontWeight: 500, color: isOpen ? "#2563eb" : "#6b7280",
+                  background: isOpen ? t.accentBg : t.panelBg, border: `1px solid ${isOpen ? t.accent : t.border}`,
+                  borderRadius: 6, padding: "2px 7px", fontSize: 10.5, fontWeight: 500, color: isOpen ? t.accent : t.textMuted,
                 }}
               >
                 <Wrench size={10} /> Propose fix
@@ -1076,7 +1146,7 @@ export default function SAPProfileComparator() {
           </td>
           {profiles.map((p) => {
             const cell = r.cellByProfile[p.id];
-            let style = { text: "#1f2530", bg: "transparent" };
+            let style = { text: t.textPrimary, bg: "transparent" };
             if (baselineId) {
               style = baselineCellStyle(r.baselineStatus[p.id]);
             } else if (cell) {
@@ -1092,15 +1162,15 @@ export default function SAPProfileComparator() {
                 key={p.id}
                 title={title}
                 className="mono"
-                style={{ padding: "8px 12px", fontSize: 12, color: style.text, background: style.bg, borderLeft: "1px solid #eef0f4" }}
+                style={{ padding: "8px 12px", fontSize: 12, color: style.text, background: style.bg, borderLeft: `1px solid ${t.borderLight}` }}
               >
                 {cell ? (
                   <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    {cell.value || <em style={{ color: "#9aa1b0" }}>(empty)</em>}
-                    {cell.isDuplicate && <AlertTriangle size={11} color="#7e22ce" />}
+                    {cell.value || <em style={{ color: t.textFaint }}>(empty)</em>}
+                    {cell.isDuplicate && <AlertTriangle size={11} color={t.duplicateText} />}
                   </span>
                 ) : (
-                  <Minus size={12} color="#c3c9d3" />
+                  <Minus size={12} color={t.textFainter} />
                 )}
               </td>
             );
@@ -1108,9 +1178,9 @@ export default function SAPProfileComparator() {
         </tr>
         {isOpen && canPropose && (
           <tr>
-            <td colSpan={profiles.length + 3} style={{ padding: "12px 16px", background: "#f9fafb", borderTop: "1px solid #e2e5eb", borderBottom: "1px solid #e2e5eb" }}>
+            <td colSpan={profiles.length + 3} style={{ padding: "12px 16px", background: t.panelBgAlt, borderTop: `1px solid ${t.border}`, borderBottom: `1px solid ${t.border}` }}>
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: "#374151" }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: t.textSecondary }}>
                   Propose fix for <span className="mono">{r.name}</span>
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -1120,14 +1190,14 @@ export default function SAPProfileComparator() {
                     const baseCell = baselineId ? r.cellByProfile[baselineId] : null;
                     return (
                       <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, flexWrap: "wrap" }}>
-                        <span className="mono" style={{ minWidth: 150, color: "#374151" }}>
-                          {p.name}{p.sid && isDefaultProfile(p.name) ? <span style={{ color: "#2563eb" }}> (SID: {p.sid})</span> : null}
+                        <span className="mono" style={{ minWidth: 150, color: t.textSecondary }}>
+                          {p.name}{p.sid && isDefaultProfile(p.name) ? <span style={{ color: t.accent }}> (SID: {p.sid})</span> : null}
                         </span>
-                        <span className="mono" style={{ minWidth: 130, color: "#9aa1b0" }}>{cell ? cell.value : "(not set)"}</span>
+                        <span className="mono" style={{ minWidth: 130, color: t.textFaint }}>{cell ? cell.value : "(not set)"}</span>
                         <select
                           value={draft.action}
                           onChange={(e) => setProposalAction(r.name, p.id, e.target.value)}
-                          style={{ background: "#ffffff", border: "1px solid #e2e5eb", borderRadius: 6, padding: "5px 8px", fontSize: 12, color: "#1f2530" }}
+                          style={{ background: t.panelBg, border: `1px solid ${t.border}`, borderRadius: 6, padding: "5px 8px", fontSize: 12, color: t.textPrimary }}
                         >
                           <option value="keep">Keep as is</option>
                           <option value="set">Set value…</option>
@@ -1139,13 +1209,13 @@ export default function SAPProfileComparator() {
                             onChange={(e) => setProposalValue(r.name, p.id, e.target.value)}
                             placeholder="Proposed value"
                             className="mono"
-                            style={{ background: "#ffffff", border: "1px solid #e2e5eb", borderRadius: 6, padding: "5px 8px", fontSize: 12, color: "#1f2530", width: 160 }}
+                            style={{ background: t.panelBg, border: `1px solid ${t.border}`, borderRadius: 6, padding: "5px 8px", fontSize: 12, color: t.textPrimary, width: 160 }}
                           />
                         )}
                         {baseCell && p.id !== baselineId && (
                           <button
                             onClick={() => applyBaselineToProposal(r.name, p.id, baseCell.value)}
-                            style={{ background: "none", border: "1px solid #e2e5eb", borderRadius: 6, padding: "4px 8px", fontSize: 11, color: "#2563eb" }}
+                            style={{ background: "none", border: `1px solid ${t.border}`, borderRadius: 6, padding: "4px 8px", fontSize: 11, color: t.accent }}
                           >
                             Match baseline
                           </button>
@@ -1158,25 +1228,25 @@ export default function SAPProfileComparator() {
                   value={proposal?.note || ""}
                   onChange={(e) => setProposalNote(r.name, e.target.value)}
                   placeholder="Notes for the Basis team (optional)"
-                  style={{ background: "#ffffff", border: "1px solid #e2e5eb", borderRadius: 6, padding: "6px 10px", fontSize: 12, color: "#1f2530" }}
+                  style={{ background: t.panelBg, border: `1px solid ${t.border}`, borderRadius: 6, padding: "6px 10px", fontSize: 12, color: t.textPrimary }}
                 />
                 <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-                  <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#374151" }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: t.textSecondary }}>
                     <input type="checkbox" checked={!!proposal?.resolved} onChange={() => toggleProposalResolved(r.name)} />
                     Mark as decided
                   </label>
-                  <span style={{ fontSize: 11, color: "#9aa1b0" }}>
+                  <span style={{ fontSize: 11, color: t.textFaint }}>
                     Set an action above for the profiles that need to change. If nothing needs to change, checking this alone lists it as "reviewed — no action needed" in the report.
                   </span>
                   <button
                     onClick={() => clearProposal(r.name)}
-                    style={{ display: "flex", alignItems: "center", gap: 5, background: "none", border: "1px solid #e2e5eb", borderRadius: 6, padding: "5px 10px", fontSize: 12, color: "#6b7280" }}
+                    style={{ display: "flex", alignItems: "center", gap: 5, background: "none", border: `1px solid ${t.border}`, borderRadius: 6, padding: "5px 10px", fontSize: 12, color: t.textMuted }}
                   >
                     <Trash2 size={11} /> Clear proposal
                   </button>
                   <button
                     onClick={() => toggleProposalRow(r.name)}
-                    style={{ background: "none", border: "none", fontSize: 12, color: "#2563eb" }}
+                    style={{ background: "none", border: "none", fontSize: 12, color: t.accent }}
                   >
                     Close
                   </button>
@@ -1193,8 +1263,8 @@ export default function SAPProfileComparator() {
     <div
       style={{
         fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
-        background: "#f6f7fb",
-        color: "#1f2530",
+        background: t.bg,
+        color: t.textPrimary,
         minHeight: "100%",
         padding: "28px",
         boxSizing: "border-box",
@@ -1203,8 +1273,8 @@ export default function SAPProfileComparator() {
       <style>{`
         * { box-sizing: border-box; }
         ::-webkit-scrollbar { width: 10px; height: 10px; }
-        ::-webkit-scrollbar-track { background: #eef0f4; }
-        ::-webkit-scrollbar-thumb { background: #cbd2de; border-radius: 6px; }
+        ::-webkit-scrollbar-track { background: ${t.scrollTrack}; }
+        ::-webkit-scrollbar-thumb { background: ${t.scrollThumb}; border-radius: 6px; }
         .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
         button { font-family: inherit; cursor: pointer; }
         input, select, textarea { font-family: inherit; }
@@ -1216,24 +1286,34 @@ export default function SAPProfileComparator() {
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6, flexWrap: "wrap", gap: 10 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ width: 34, height: 34, borderRadius: 8, background: "#eef2ff", border: "1px solid #dbe2f5", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <Layers size={18} color="#2563eb" />
+          <div style={{ width: 34, height: 34, borderRadius: 8, background: t.accentBg, border: `1px solid ${t.accentBorder}`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <Layers size={18} color={t.accent} />
           </div>
-          <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0, letterSpacing: "-0.01em" }}>SAP Profile Analyzer</h1>
+          <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0, letterSpacing: "-0.01em", color: t.textPrimary }}>SAP Profile Analyzer</h1>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
+          <button
+            onClick={cycleTheme}
+            title={`Theme: ${theme === "light" ? "Light" : theme === "dark" ? "Dark" : "Colorblind-safe"} (click to switch)`}
+            style={{ display: "flex", alignItems: "center", gap: 6, background: t.panelBg, border: `1px solid ${t.border}`, borderRadius: 8, padding: "7px 12px", fontSize: 12.5, color: t.textSecondary }}
+          >
+            {theme === "light" && <Sun size={13} />}
+            {theme === "dark" && <Moon size={13} />}
+            {theme === "colorblind" && <Contrast size={13} />}
+            {theme === "light" ? "Light" : theme === "dark" ? "Dark" : "Colorblind-safe"}
+          </button>
           <button
             onClick={exportSession}
             disabled={!profiles.length}
             title="Save the parsed comparison (not the original files) so you can reload it later"
-            style={{ display: "flex", alignItems: "center", gap: 6, background: "#fff", border: "1px solid #e2e5eb", borderRadius: 8, padding: "7px 12px", fontSize: 12.5, color: profiles.length ? "#374151" : "#b7bcc7" }}
+            style={{ display: "flex", alignItems: "center", gap: 6, background: t.panelBg, border: `1px solid ${t.border}`, borderRadius: 8, padding: "7px 12px", fontSize: 12.5, color: profiles.length ? t.textSecondary : t.textFainter }}
           >
             <Save size={13} /> Save comparison
           </button>
           <button
             onClick={() => sessionInputRef.current?.click()}
             title="Load a previously saved comparison session (.json)"
-            style={{ display: "flex", alignItems: "center", gap: 6, background: "#fff", border: "1px solid #e2e5eb", borderRadius: 8, padding: "7px 12px", fontSize: 12.5, color: "#374151" }}
+            style={{ display: "flex", alignItems: "center", gap: 6, background: t.panelBg, border: `1px solid ${t.border}`, borderRadius: 8, padding: "7px 12px", fontSize: 12.5, color: t.textSecondary }}
           >
             <FolderOpen size={13} /> Load comparison
           </button>
@@ -1246,9 +1326,9 @@ export default function SAPProfileComparator() {
           />
         </div>
       </div>
-      <p style={{ color: "#6b7280", fontSize: 13.5, margin: "0 0 22px 46px" }}>
+      <p style={{ color: t.textMuted, fontSize: 13.5, margin: "0 0 22px 46px" }}>
         Upload any SAP profile files to compare them side by side, surface differences and duplicates, export a report for the Basis team, and save comparisons to revisit later.{" "}
-        <a href="/SAP_Profile_Analyzer_User_Guide.pdf" target="_blank" rel="noopener noreferrer" style={{ color: "#2563eb", whiteSpace: "nowrap" }}>
+        <a href="/SAP_Profile_Analyzer_User_Guide.pdf" target="_blank" rel="noopener noreferrer" style={{ color: t.accent, whiteSpace: "nowrap" }}>
           New here? Read the user guide
         </a>
       </p>
@@ -1260,8 +1340,8 @@ export default function SAPProfileComparator() {
         onDrop={onDrop}
         onClick={() => fileInputRef.current?.click()}
         style={{
-          border: `1.5px dashed ${dragOver ? "#2563eb" : "#d7dce6"}`,
-          background: dragOver ? "rgba(37,99,235,0.05)" : "#ffffff",
+          border: `1.5px dashed ${dragOver ? t.accent : t.border}`,
+          background: dragOver ? `rgba(${t.accentRgb},0.05)` : t.panelBg,
           borderRadius: 10,
           padding: "26px 20px",
           textAlign: "center",
@@ -1276,9 +1356,9 @@ export default function SAPProfileComparator() {
           hidden
           onChange={(e) => { if (e.target.files?.length) handleFiles(e.target.files); e.target.value = ""; }}
         />
-        <Upload size={22} color="#2563eb" style={{ marginBottom: 8 }} />
-        <div style={{ fontSize: 14, fontWeight: 500 }}>Drop SAP profile files here, or click to browse</div>
-        <div style={{ fontSize: 12.5, color: "#9aa1b0", marginTop: 4 }}>
+        <Upload size={22} color={t.accent} style={{ marginBottom: 8 }} />
+        <div style={{ fontSize: 14, fontWeight: 500, color: t.textPrimary }}>Drop SAP profile files here, or click to browse</div>
+        <div style={{ fontSize: 12.5, color: t.textFaint, marginTop: 4 }}>
           Accepts any text-based profile (DEFAULT.PFL, instance profiles, etc.) — parsed as key = value pairs. DEFAULT profiles get their SID auto-detected.
         </div>
       </div>
@@ -1286,17 +1366,17 @@ export default function SAPProfileComparator() {
       <div style={{ textAlign: "center", margin: "10px 0 18px" }}>
         <button
           onClick={(e) => { e.stopPropagation(); setPasteOpen((v) => !v); }}
-          style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "none", border: "none", fontSize: 12.5, color: "#2563eb", fontWeight: 500 }}
+          style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "none", border: "none", fontSize: 12.5, color: t.accent, fontWeight: 500 }}
         >
           <ClipboardPaste size={13} /> {pasteOpen ? "Cancel pasting text" : "or paste profile text instead"}
         </button>
         {pasteOpen && (
-          <div style={{ background: "#ffffff", border: "1px solid #e2e5eb", borderRadius: 10, padding: 14, marginTop: 10, textAlign: "left" }}>
+          <div style={{ background: t.panelBg, border: `1px solid ${t.border}`, borderRadius: 10, padding: 14, marginTop: 10, textAlign: "left" }}>
             <input
               value={pasteName}
               onChange={(e) => setPasteName(e.target.value)}
               placeholder="Profile name (e.g. DEFAULT.PFL, PRD_DVEBMGS00)"
-              style={{ width: "100%", background: "#f9fafb", border: "1px solid #e2e5eb", borderRadius: 6, padding: "7px 10px", fontSize: 12.5, marginBottom: 8, color: "#1f2530" }}
+              style={{ width: "100%", background: t.panelBgAlt, border: `1px solid ${t.border}`, borderRadius: 6, padding: "7px 10px", fontSize: 12.5, marginBottom: 8, color: t.textPrimary }}
             />
             <textarea
               value={pasteText}
@@ -1304,18 +1384,18 @@ export default function SAPProfileComparator() {
               placeholder={"login/min_password_lng = 8\nrdisp/wp_no_dia = 20"}
               rows={6}
               className="mono"
-              style={{ width: "100%", background: "#f9fafb", border: "1px solid #e2e5eb", borderRadius: 6, padding: "8px 10px", fontSize: 12, color: "#1f2530", resize: "vertical" }}
+              style={{ width: "100%", background: t.panelBgAlt, border: `1px solid ${t.border}`, borderRadius: 6, padding: "8px 10px", fontSize: 12, color: t.textPrimary, resize: "vertical" }}
             />
             <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
               <button
                 onClick={addPastedProfile}
-                style={{ background: "#2563eb", border: "none", borderRadius: 6, padding: "6px 12px", fontSize: 12.5, fontWeight: 600, color: "#fff" }}
+                style={{ background: t.accent, border: "none", borderRadius: 6, padding: "6px 12px", fontSize: 12.5, fontWeight: 600, color: "#ffffff" }}
               >
                 Add profile
               </button>
               <button
                 onClick={() => { setPasteOpen(false); setPasteName(""); setPasteText(""); }}
-                style={{ background: "none", border: "1px solid #e2e5eb", borderRadius: 6, padding: "6px 12px", fontSize: 12.5, color: "#6b7280" }}
+                style={{ background: "none", border: `1px solid ${t.border}`, borderRadius: 6, padding: "6px 12px", fontSize: 12.5, color: t.textMuted }}
               >
                 Cancel
               </button>
@@ -1325,12 +1405,12 @@ export default function SAPProfileComparator() {
       </div>
 
       {parseWarnings.length > 0 && (
-        <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderLeft: "4px solid #f59e0b", borderRadius: 8, padding: "12px 14px", marginBottom: 18 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 600, color: "#92400e", marginBottom: 6 }}>
+        <div style={{ background: t.warningBg, border: `1px solid ${t.warningBorder}`, borderLeft: `4px solid ${t.diffGutter}`, borderRadius: 8, padding: "12px 14px", marginBottom: 18 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 600, color: t.warningText, marginBottom: 6 }}>
             <AlertTriangle size={15} /> Some files need attention
           </div>
           {parseWarnings.map((w, i) => (
-            <div key={i} style={{ fontSize: 12, color: "#92400e", marginLeft: 21 }}>{w}</div>
+            <div key={i} style={{ fontSize: 12, color: t.warningText, marginLeft: 21 }}>{w}</div>
           ))}
         </div>
       )}
@@ -1346,18 +1426,18 @@ export default function SAPProfileComparator() {
                 key={p.id}
                 style={{
                   display: "flex", alignItems: "center", gap: 8,
-                  background: isBaseline ? "rgba(37,99,235,0.06)" : "#ffffff",
-                  border: `1px solid ${isBaseline ? "#2563eb" : "#e2e5eb"}`,
+                  background: isBaseline ? `rgba(${t.accentRgb},0.06)` : t.panelBg,
+                  border: `1px solid ${isBaseline ? t.accent : t.border}`,
                   borderRadius: 8, padding: "7px 10px", fontSize: 12.5,
                 }}
               >
-                <FileText size={13} color="#8993a4" />
-                <span className="mono" style={{ fontWeight: 500 }}>
-                  {p.name}{p.sid && isDefaultProfile(p.name) ? <span style={{ color: "#2563eb" }}> (SID: {p.sid})</span> : null}
+                <FileText size={13} color={t.textFaint} />
+                <span className="mono" style={{ fontWeight: 500, color: t.textPrimary }}>
+                  {p.name}{p.sid && isDefaultProfile(p.name) ? <span style={{ color: t.accent }}> (SID: {p.sid})</span> : null}
                 </span>
-                <span style={{ color: "#9aa1b0" }}>· {p.params.size} params</span>
+                <span style={{ color: t.textFaint }}>· {p.params.size} params</span>
                 {dupCount > 0 && (
-                  <span style={{ display: "flex", alignItems: "center", gap: 3, color: "#7e22ce" }}>
+                  <span style={{ display: "flex", alignItems: "center", gap: 3, color: t.duplicateText }}>
                     <Copy size={11} /> {dupCount}
                   </span>
                 )}
@@ -1366,17 +1446,17 @@ export default function SAPProfileComparator() {
                   title={isBaseline ? "Unset as baseline" : "Set as baseline"}
                   style={{ background: "none", border: "none", padding: 2, display: "flex" }}
                 >
-                  {isBaseline ? <Star size={14} color="#2563eb" fill="#2563eb" /> : <StarOff size={14} color="#9aa1b0" />}
+                  {isBaseline ? <Star size={14} color={t.accent} fill={t.accent} /> : <StarOff size={14} color={t.textFaint} />}
                 </button>
                 <button onClick={() => removeProfile(p.id)} style={{ background: "none", border: "none", padding: 2, display: "flex" }}>
-                  <X size={14} color="#9aa1b0" />
+                  <X size={14} color={t.textFaint} />
                 </button>
               </div>
             );
           })}
           <button
             onClick={clearAll}
-            style={{ display: "flex", alignItems: "center", gap: 5, background: "#fff", border: "1px solid #e2e5eb", borderRadius: 8, padding: "7px 10px", fontSize: 12.5, color: "#6b7280" }}
+            style={{ display: "flex", alignItems: "center", gap: 5, background: t.panelBg, border: `1px solid ${t.border}`, borderRadius: 8, padding: "7px 10px", fontSize: 12.5, color: t.textMuted }}
           >
             <Trash2 size={12} /> Clear all
           </button>
@@ -1385,28 +1465,28 @@ export default function SAPProfileComparator() {
 
       {profiles.length === 0 ? (
         <div style={{ textAlign: "center", padding: "48px 20px" }}>
-          <Layers size={28} color="#c7cedb" style={{ marginBottom: 10 }} />
-          <div style={{ fontSize: 14, fontWeight: 500, color: "#6b7280", marginBottom: 4 }}>No profiles loaded yet</div>
-          <div style={{ fontSize: 12.5, color: "#9aa1b0" }}>Upload at least two profiles to see a comparison, paste profile text, or load a previously saved comparison.</div>
+          <Layers size={28} color={t.textFainter} style={{ marginBottom: 10 }} />
+          <div style={{ fontSize: 14, fontWeight: 500, color: t.textMuted, marginBottom: 4 }}>No profiles loaded yet</div>
+          <div style={{ fontSize: 12.5, color: t.textFaint }}>Upload at least two profiles to see a comparison, paste profile text, or load a previously saved comparison.</div>
         </div>
       ) : (
         <>
           {/* Summary stats */}
           <div style={{ display: "flex", gap: 10, marginBottom: 18, flexWrap: "wrap" }}>
             {[
-              { label: "Parameters", value: counts.total, color: "#1f2530" },
-              { label: "Matching", value: counts.matching, color: "#15803d" },
-              { label: "Different", value: counts.different, color: "#b45309" },
-              { label: "Missing", value: counts.missing, color: "#dc2626" },
-              { label: "Duplicates", value: counts.duplicates, color: "#7e22ce" },
-              { label: "Type mismatches", value: counts.typeMismatches, color: "#0d9488" },
-              { label: "Excluded", value: counts.excluded, color: "#6b7280" },
-              { label: "Decided", value: `${counts.decided}/${counts.actionable}`, color: "#2563eb" },
-              ...(ignoreSidDiffs ? [{ label: "SID-normalized", value: counts.sidNormalized, color: "#2563eb" }] : []),
+              { label: "Parameters", value: counts.total, color: t.textPrimary },
+              { label: "Matching", value: counts.matching, color: t.matchText },
+              { label: "Different", value: counts.different, color: t.diffText },
+              { label: "Missing", value: counts.missing, color: t.missingText },
+              { label: "Duplicates", value: counts.duplicates, color: t.duplicateText },
+              { label: "Type mismatches", value: counts.typeMismatches, color: t.typeMismatchText },
+              { label: "Excluded", value: counts.excluded, color: t.textMuted },
+              { label: "Decided", value: `${counts.decided}/${counts.actionable}`, color: t.accent },
+              ...(ignoreSidDiffs ? [{ label: "SID-normalized", value: counts.sidNormalized, color: t.accent }] : []),
             ].map((s) => (
-              <div key={s.label} style={{ background: "#ffffff", border: "1px solid #e2e5eb", borderRadius: 8, padding: "10px 16px", minWidth: 88 }}>
+              <div key={s.label} style={{ background: t.panelBg, border: `1px solid ${t.border}`, borderRadius: 8, padding: "10px 16px", minWidth: 88 }}>
                 <div className="mono" style={{ fontSize: 19, fontWeight: 600, color: s.color }}>{s.value}</div>
-                <div style={{ fontSize: 11, color: "#9aa1b0", marginTop: 2 }}>{s.label}</div>
+                <div style={{ fontSize: 11, color: t.textFaint, marginTop: 2 }}>{s.label}</div>
               </div>
             ))}
           </div>
@@ -1414,33 +1494,33 @@ export default function SAPProfileComparator() {
           {/* Match / different / missing overview bar */}
           {(counts.matching + counts.different + counts.missing) > 0 && (
             <div style={{ marginBottom: 18 }}>
-              <div style={{ display: "flex", height: 14, borderRadius: 7, overflow: "hidden", border: "1px solid #e2e5eb" }}>
+              <div style={{ display: "flex", height: 14, borderRadius: 7, overflow: "hidden", border: `1px solid ${t.border}` }}>
                 {counts.matching > 0 && (
-                  <div style={{ width: `${(counts.matching / (counts.matching + counts.different + counts.missing)) * 100}%`, background: "#15803d" }} title={`Matching: ${counts.matching}`}></div>
+                  <div style={{ width: `${(counts.matching / (counts.matching + counts.different + counts.missing)) * 100}%`, background: t.matchGutter }} title={`Matching: ${counts.matching}`}></div>
                 )}
                 {counts.different > 0 && (
-                  <div style={{ width: `${(counts.different / (counts.matching + counts.different + counts.missing)) * 100}%`, background: "#b45309" }} title={`Different: ${counts.different}`}></div>
+                  <div style={{ width: `${(counts.different / (counts.matching + counts.different + counts.missing)) * 100}%`, background: t.diffGutter }} title={`Different: ${counts.different}`}></div>
                 )}
                 {counts.missing > 0 && (
-                  <div style={{ width: `${(counts.missing / (counts.matching + counts.different + counts.missing)) * 100}%`, background: "#dc2626" }} title={`Missing: ${counts.missing}`}></div>
+                  <div style={{ width: `${(counts.missing / (counts.matching + counts.different + counts.missing)) * 100}%`, background: t.missingGutter }} title={`Missing: ${counts.missing}`}></div>
                 )}
               </div>
-              <div style={{ display: "flex", gap: 16, marginTop: 6, fontSize: 11.5, color: "#6b7280", flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: 16, marginTop: 6, fontSize: 11.5, color: t.textMuted, flexWrap: "wrap" }}>
                 {(() => {
                   const denom = counts.matching + counts.different + counts.missing;
                   const pct = (n) => Math.round((n / denom) * 100);
                   return (
                     <>
                       <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                        <span style={{ width: 8, height: 8, borderRadius: 2, background: "#15803d", display: "inline-block" }}></span>
+                        <span style={{ width: 8, height: 8, borderRadius: 2, background: t.matchGutter, display: "inline-block" }}></span>
                         Matching {counts.matching} ({pct(counts.matching)}%)
                       </span>
                       <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                        <span style={{ width: 8, height: 8, borderRadius: 2, background: "#b45309", display: "inline-block" }}></span>
+                        <span style={{ width: 8, height: 8, borderRadius: 2, background: t.diffGutter, display: "inline-block" }}></span>
                         Different {counts.different} ({pct(counts.different)}%)
                       </span>
                       <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                        <span style={{ width: 8, height: 8, borderRadius: 2, background: "#dc2626", display: "inline-block" }}></span>
+                        <span style={{ width: 8, height: 8, borderRadius: 2, background: t.missingGutter, display: "inline-block" }}></span>
                         Missing {counts.missing} ({pct(counts.missing)}%)
                       </span>
                     </>
@@ -1452,14 +1532,14 @@ export default function SAPProfileComparator() {
 
           {/* Controls */}
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
-            <div style={{ display: "flex", flexWrap: "wrap", background: "#ffffff", border: "1px solid #e2e5eb", borderRadius: 8, padding: 3 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", background: t.panelBg, border: `1px solid ${t.border}`, borderRadius: 8, padding: 3 }}>
               {VIEW_MODES.map((m) => (
                 <button
                   key={m.id}
                   onClick={() => setViewMode(m.id)}
                   style={{
-                    background: viewMode === m.id ? "#eef2ff" : "transparent",
-                    color: viewMode === m.id ? "#2563eb" : "#6b7280",
+                    background: viewMode === m.id ? t.accentBg : "transparent",
+                    color: viewMode === m.id ? t.accent : t.textMuted,
                     border: "none", borderRadius: 6, padding: "6px 12px", fontSize: 12.5, fontWeight: 500,
                   }}
                 >
@@ -1470,8 +1550,8 @@ export default function SAPProfileComparator() {
                 <button
                   onClick={() => setViewMode("baseline")}
                   style={{
-                    background: viewMode === "baseline" ? "#eef2ff" : "transparent",
-                    color: viewMode === "baseline" ? "#2563eb" : "#6b7280",
+                    background: viewMode === "baseline" ? t.accentBg : "transparent",
+                    color: viewMode === "baseline" ? t.accent : t.textMuted,
                     border: "none", borderRadius: 6, padding: "6px 12px", fontSize: 12.5, fontWeight: 500,
                     display: "flex", alignItems: "center", gap: 4,
                   }}
@@ -1482,21 +1562,21 @@ export default function SAPProfileComparator() {
             </div>
 
             <div style={{ position: "relative" }}>
-              <Search size={13} color="#9aa1b0" style={{ position: "absolute", left: 10, top: 9 }} />
+              <Search size={13} color={t.textFaint} style={{ position: "absolute", left: 10, top: 9 }} />
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Filter parameters…"
                 style={{
-                  background: "#ffffff", border: "1px solid #e2e5eb", borderRadius: 8,
-                  padding: "7px 10px 7px 30px", fontSize: 12.5, color: "#1f2530", width: 190, outline: "none",
+                  background: t.panelBg, border: `1px solid ${t.border}`, borderRadius: 8,
+                  padding: "7px 10px 7px 30px", fontSize: 12.5, color: t.textPrimary, width: 190, outline: "none",
                 }}
               />
             </div>
 
             <button
               onClick={() => setShowExcluded((v) => !v)}
-              style={{ display: "flex", alignItems: "center", gap: 6, background: "#ffffff", border: "1px solid #e2e5eb", borderRadius: 8, padding: "7px 10px", fontSize: 12.5, color: "#6b7280" }}
+              style={{ display: "flex", alignItems: "center", gap: 6, background: t.panelBg, border: `1px solid ${t.border}`, borderRadius: 8, padding: "7px 10px", fontSize: 12.5, color: t.textMuted }}
             >
               {showExcluded ? <Eye size={13} /> : <EyeOff size={13} />}
               {showExcluded ? "Showing excluded" : "Hiding excluded"}
@@ -1504,7 +1584,7 @@ export default function SAPProfileComparator() {
 
             <button
               onClick={() => setShowExclusionsPanel((v) => !v)}
-              style={{ display: "flex", alignItems: "center", gap: 6, background: showExclusionsPanel ? "#eef2ff" : "#ffffff", border: "1px solid #e2e5eb", borderRadius: 8, padding: "7px 10px", fontSize: 12.5, color: showExclusionsPanel ? "#2563eb" : "#6b7280" }}
+              style={{ display: "flex", alignItems: "center", gap: 6, background: showExclusionsPanel ? t.accentBg : t.panelBg, border: `1px solid ${t.border}`, borderRadius: 8, padding: "7px 10px", fontSize: 12.5, color: showExclusionsPanel ? t.accent : t.textMuted }}
             >
               <MessageSquare size={13} /> Exclusions{excludedParams.size > 0 ? ` (${excludedParams.size})` : ""}
             </button>
@@ -1513,7 +1593,7 @@ export default function SAPProfileComparator() {
               <button
                 onClick={() => setIgnoreSidDiffs((v) => !v)}
                 title="Treat values that only differ because each profile's own SID appears in them (e.g. xs4.example.com vs ps4.example.com) as matching, not different"
-                style={{ display: "flex", alignItems: "center", gap: 6, background: ignoreSidDiffs ? "#eef2ff" : "#ffffff", border: "1px solid #e2e5eb", borderRadius: 8, padding: "7px 10px", fontSize: 12.5, color: ignoreSidDiffs ? "#2563eb" : "#6b7280" }}
+                style={{ display: "flex", alignItems: "center", gap: 6, background: ignoreSidDiffs ? t.accentBg : t.panelBg, border: `1px solid ${t.border}`, borderRadius: 8, padding: "7px 10px", fontSize: 12.5, color: ignoreSidDiffs ? t.accent : t.textMuted }}
               >
                 <Fingerprint size={13} /> {ignoreSidDiffs ? "Ignoring SID differences" : "Ignore SID differences"}
               </button>
@@ -1523,13 +1603,13 @@ export default function SAPProfileComparator() {
 
             <button
               onClick={exportReport}
-              style={{ display: "flex", alignItems: "center", gap: 6, background: "#2563eb", border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 12.5, fontWeight: 600, color: "#ffffff" }}
+              style={{ display: "flex", alignItems: "center", gap: 6, background: t.accent, border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 12.5, fontWeight: 600, color: "#ffffff" }}
             >
               <Download size={13} /> Excel report
             </button>
             <button
               onClick={exportPDF}
-              style={{ display: "flex", alignItems: "center", gap: 6, background: "#ffffff", border: "1px solid #2563eb", borderRadius: 8, padding: "8px 14px", fontSize: 12.5, fontWeight: 600, color: "#2563eb" }}
+              style={{ display: "flex", alignItems: "center", gap: 6, background: t.panelBg, border: `1px solid ${t.accent}`, borderRadius: 8, padding: "8px 14px", fontSize: 12.5, fontWeight: 600, color: t.accent }}
             >
               <Printer size={13} /> PDF report
             </button>
@@ -1537,7 +1617,7 @@ export default function SAPProfileComparator() {
               onClick={exportRemediationPDF}
               disabled={counts.decided === 0}
               title={counts.decided === 0 ? "Propose at least one fix and mark it as decided to enable this" : "Export the parameters you've decided how to fix, grouped by profile"}
-              style={{ display: "flex", alignItems: "center", gap: 6, background: "#ffffff", border: `1px solid ${counts.decided ? "#15803d" : "#e2e5eb"}`, borderRadius: 8, padding: "8px 14px", fontSize: 12.5, fontWeight: 600, color: counts.decided ? "#15803d" : "#b7bcc7" }}
+              style={{ display: "flex", alignItems: "center", gap: 6, background: t.panelBg, border: `1px solid ${counts.decided ? t.matchText : t.border}`, borderRadius: 8, padding: "8px 14px", fontSize: 12.5, fontWeight: 600, color: counts.decided ? t.matchText : t.textFainter }}
             >
               <ClipboardCheck size={13} /> Remediation plan
             </button>
@@ -1545,23 +1625,23 @@ export default function SAPProfileComparator() {
 
           {/* Exclusions panel */}
           {showExclusionsPanel && (
-            <div style={{ border: "1px solid #e2e5eb", borderRadius: 10, background: "#ffffff", padding: 14, marginBottom: 14 }}>
-              <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 8, color: "#374151" }}>Excluded parameters ({excludedParams.size})</div>
+            <div style={{ border: `1px solid ${t.border}`, borderRadius: 10, background: t.panelBg, padding: 14, marginBottom: 14 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 8, color: t.textSecondary }}>Excluded parameters ({excludedParams.size})</div>
               {excludedParams.size === 0 ? (
-                <div style={{ fontSize: 12, color: "#9aa1b0" }}>No parameters excluded yet. Check the "Excl." box next to a parameter row to exclude it, then note why here.</div>
+                <div style={{ fontSize: 12, color: t.textFaint }}>No parameters excluded yet. Check the "Excl." box next to a parameter row to exclude it, then note why here.</div>
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 220, overflowY: "auto" }}>
                   {Array.from(excludedParams.entries()).sort((a, b) => a[0].localeCompare(b[0])).map(([name, reason]) => (
                     <div key={name} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span className="mono" style={{ fontSize: 12, minWidth: 220, color: "#374151" }}>{name}</span>
+                      <span className="mono" style={{ fontSize: 12, minWidth: 220, color: t.textSecondary }}>{name}</span>
                       <input
                         value={reason}
                         onChange={(e) => setExclusionReason(name, e.target.value)}
                         placeholder="Reason (optional) — e.g. expected to differ per system"
-                        style={{ flex: 1, background: "#f9fafb", border: "1px solid #e2e5eb", borderRadius: 6, padding: "5px 8px", fontSize: 12, color: "#1f2530" }}
+                        style={{ flex: 1, background: t.panelBgAlt, border: `1px solid ${t.border}`, borderRadius: 6, padding: "5px 8px", fontSize: 12, color: t.textPrimary }}
                       />
                       <button onClick={() => toggleExcluded(name)} style={{ background: "none", border: "none", display: "flex" }} title="Remove exclusion">
-                        <X size={13} color="#9aa1b0" />
+                        <X size={13} color={t.textFaint} />
                       </button>
                     </div>
                   ))}
@@ -1571,37 +1651,37 @@ export default function SAPProfileComparator() {
           )}
 
           {baselineId && (
-            <div style={{ fontSize: 12, color: "#2563eb", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
-              <Star size={12} fill="#2563eb" /> Baseline: <span className="mono">{profiles.find((p) => p.id === baselineId)?.name}</span> — other profiles are evaluated against it, and the report includes recommended actions.
+            <div style={{ fontSize: 12, color: t.accent, marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+              <Star size={12} fill={t.accent} /> Baseline: <span className="mono">{profiles.find((p) => p.id === baselineId)?.name}</span> — other profiles are evaluated against it, and the report includes recommended actions.
             </div>
           )}
 
           {/* Legend + table toolbar */}
           <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 14, fontSize: 11.5, color: "#6b7280" }}>
-              <LegendItem color="#22c55e" label="Matching" />
-              <LegendItem color="#f59e0b" label="Different" />
-              <LegendItem color="#ef4444" label="Missing" />
-              <LegendItem color="#7e22ce" label="Duplicate entry" />
-              <LegendItem color="#0d9488" label="Type mismatch" />
-              <LegendItem color="#2563eb" label="Baseline column" />
-              <LegendItem color="#9ca3af" label="Excluded" />
-              <LegendItem color="#15803d" label="Fix decided" />
-              {ignoreSidDiffs && <LegendItem color="#2563eb" label="Matched after ignoring SID" />}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 14, fontSize: 11.5, color: t.textMuted }}>
+              <LegendItem color={t.matchGutter} label="Matching" />
+              <LegendItem color={t.diffGutter} label="Different" />
+              <LegendItem color={t.missingGutter} label="Missing" />
+              <LegendItem color={t.duplicateText} label="Duplicate entry" />
+              <LegendItem color={t.typeMismatchText} label="Type mismatch" />
+              <LegendItem color={t.accent} label="Baseline column" />
+              <LegendItem color={t.textFaint} label="Excluded" />
+              <LegendItem color={t.matchText} label="Fix decided" />
+              {ignoreSidDiffs && <LegendItem color={t.accent} label="Matched after ignoring SID" />}
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <button
                 onClick={() => setGroupByCategory((v) => !v)}
-                style={{ display: "flex", alignItems: "center", gap: 5, background: "#ffffff", border: "1px solid #e2e5eb", borderRadius: 8, padding: "6px 10px", fontSize: 12, color: "#6b7280" }}
+                style={{ display: "flex", alignItems: "center", gap: 5, background: t.panelBg, border: `1px solid ${t.border}`, borderRadius: 8, padding: "6px 10px", fontSize: 12, color: t.textMuted }}
               >
                 <Layers size={12} /> {groupByCategory ? "Grouped by category" : "Flat list"}
               </button>
               {groupByCategory && (
                 <>
-                  <button onClick={() => setCollapsedGroups(new Set())} style={{ background: "#ffffff", border: "1px solid #e2e5eb", borderRadius: 8, padding: "6px 10px", fontSize: 12, color: "#6b7280" }}>
+                  <button onClick={() => setCollapsedGroups(new Set())} style={{ background: t.panelBg, border: `1px solid ${t.border}`, borderRadius: 8, padding: "6px 10px", fontSize: 12, color: t.textMuted }}>
                     Expand all
                   </button>
-                  <button onClick={() => setCollapsedGroups(new Set(groups.map(([cat]) => cat)))} style={{ background: "#ffffff", border: "1px solid #e2e5eb", borderRadius: 8, padding: "6px 10px", fontSize: 12, color: "#6b7280" }}>
+                  <button onClick={() => setCollapsedGroups(new Set(groups.map(([cat]) => cat)))} style={{ background: t.panelBg, border: `1px solid ${t.border}`, borderRadius: 8, padding: "6px 10px", fontSize: 12, color: t.textMuted }}>
                     Collapse all
                   </button>
                 </>
@@ -1609,7 +1689,7 @@ export default function SAPProfileComparator() {
               <button
                 onClick={jumpToNextDifference}
                 disabled={!diffTargets.length}
-                style={{ display: "flex", alignItems: "center", gap: 5, background: "#ffffff", border: "1px solid #e2e5eb", borderRadius: 8, padding: "6px 10px", fontSize: 12, color: diffTargets.length ? "#2563eb" : "#c3c9d3" }}
+                style={{ display: "flex", alignItems: "center", gap: 5, background: t.panelBg, border: `1px solid ${t.border}`, borderRadius: 8, padding: "6px 10px", fontSize: 12, color: diffTargets.length ? t.accent : t.textFainter }}
               >
                 <Target size={12} /> Jump to next difference{diffTargets.length ? ` (${diffTargets.length})` : ""}
               </button>
@@ -1617,7 +1697,7 @@ export default function SAPProfileComparator() {
                 onClick={jumpToNextPending}
                 disabled={!pendingTargets.length}
                 title="Jump to the next difference or missing parameter that doesn't have a decided proposal yet"
-                style={{ display: "flex", alignItems: "center", gap: 5, background: "#ffffff", border: "1px solid #e2e5eb", borderRadius: 8, padding: "6px 10px", fontSize: 12, color: pendingTargets.length ? "#2563eb" : "#c3c9d3" }}
+                style={{ display: "flex", alignItems: "center", gap: 5, background: t.panelBg, border: `1px solid ${t.border}`, borderRadius: 8, padding: "6px 10px", fontSize: 12, color: pendingTargets.length ? t.accent : t.textFainter }}
               >
                 <ListTodo size={12} /> Jump to next pending decision{pendingTargets.length ? ` (${pendingTargets.length})` : ""}
               </button>
@@ -1625,31 +1705,31 @@ export default function SAPProfileComparator() {
           </div>
 
           {/* Table */}
-          <div style={{ border: "1px solid #e2e5eb", borderRadius: 10, overflow: "hidden", background: "#ffffff" }}>
+          <div style={{ border: `1px solid ${t.border}`, borderRadius: 10, overflow: "hidden", background: t.panelBg }}>
             <div style={{ overflowX: "auto", maxHeight: 560, overflowY: "auto" }}>
               <table>
                 <thead>
-                  <tr style={{ background: "#f5f6f9", position: "sticky", top: 0, zIndex: 2 }}>
+                  <tr style={{ background: t.panelBgAlt, position: "sticky", top: 0, zIndex: 2 }}>
                     <th className="diff-gutter"></th>
-                    <th style={{ padding: "10px 12px", fontSize: 11.5, color: "#6b7280", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.03em", minWidth: 60 }}>Excl.</th>
-                    <th style={{ padding: "10px 12px", fontSize: 11.5, color: "#6b7280", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.03em", minWidth: 220 }}>Parameter</th>
+                    <th style={{ padding: "10px 12px", fontSize: 11.5, color: t.textMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.03em", minWidth: 60 }}>Excl.</th>
+                    <th style={{ padding: "10px 12px", fontSize: 11.5, color: t.textMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.03em", minWidth: 220 }}>Parameter</th>
                     {profiles.map((p) => (
-                      <th key={p.id} style={{ padding: "8px 12px", fontSize: 11.5, color: p.id === baselineId ? "#2563eb" : "#6b7280", fontWeight: 600, minWidth: 160, borderLeft: "1px solid #e9ebf0" }}>
+                      <th key={p.id} style={{ padding: "8px 12px", fontSize: 11.5, color: p.id === baselineId ? t.accent : t.textMuted, fontWeight: 600, minWidth: 160, borderLeft: `1px solid ${t.borderLight}` }}>
                         <div className="mono" style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                           <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                            {p.id === baselineId && <Star size={11} fill="#2563eb" />}
+                            {p.id === baselineId && <Star size={11} fill={t.accent} />}
                             {p.name}
                           </span>
-                          {p.sid && isDefaultProfile(p.name) && <span style={{ fontSize: 10, fontWeight: 600, color: "#2563eb" }}>SID: {p.sid}</span>}
+                          {p.sid && isDefaultProfile(p.name) && <span style={{ fontSize: 10, fontWeight: 600, color: t.accent }}>SID: {p.sid}</span>}
                           <span style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
                             <button onClick={() => moveProfile(p.id, -1)} title="Move column left" style={{ background: "none", border: "none", padding: 0, display: "flex" }}>
-                              <ChevronLeft size={12} color="#b7bcc7" />
+                              <ChevronLeft size={12} color={t.textFainter} />
                             </button>
                             <button onClick={() => pinProfile(p.id)} title="Pin to front" style={{ background: "none", border: "none", padding: 0, display: "flex" }}>
-                              <Pin size={11} color="#b7bcc7" />
+                              <Pin size={11} color={t.textFainter} />
                             </button>
                             <button onClick={() => moveProfile(p.id, 1)} title="Move column right" style={{ background: "none", border: "none", padding: 0, display: "flex" }}>
-                              <ChevronRight size={12} color="#b7bcc7" />
+                              <ChevronRight size={12} color={t.textFainter} />
                             </button>
                           </span>
                         </div>
@@ -1661,12 +1741,12 @@ export default function SAPProfileComparator() {
                   {groups.map(([cat, catRows]) => (
                     <React.Fragment key={cat || "flat"}>
                       {groupByCategory && (
-                        <tr onClick={() => toggleGroup(cat)} style={{ background: "#f9fafb", cursor: "pointer", borderTop: "1px solid #e2e5eb" }}>
-                          <td colSpan={profiles.length + 3} style={{ padding: "7px 12px", fontSize: 12, fontWeight: 600, color: "#374151" }}>
+                        <tr onClick={() => toggleGroup(cat)} style={{ background: t.panelBgAlt, cursor: "pointer", borderTop: `1px solid ${t.border}` }}>
+                          <td colSpan={profiles.length + 3} style={{ padding: "7px 12px", fontSize: 12, fontWeight: 600, color: t.textSecondary }}>
                             <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
                               <ChevronDown size={13} style={{ transform: collapsedGroups.has(cat) ? "rotate(-90deg)" : "none", transition: "transform 0.1s" }} />
                               {cat === "other" ? "Other parameters" : cat}
-                              <span style={{ fontWeight: 400, color: "#9aa1b0" }}>· {catRows.length} parameter{catRows.length === 1 ? "" : "s"}</span>
+                              <span style={{ fontWeight: 400, color: t.textFaint }}>· {catRows.length} parameter{catRows.length === 1 ? "" : "s"}</span>
                             </span>
                           </td>
                         </tr>
@@ -1676,7 +1756,7 @@ export default function SAPProfileComparator() {
                   ))}
                   {filteredRows.length === 0 && (
                     <tr>
-                      <td colSpan={profiles.length + 3} style={{ padding: 24, textAlign: "center", color: "#9aa1b0", fontSize: 13 }}>
+                      <td colSpan={profiles.length + 3} style={{ padding: 24, textAlign: "center", color: t.textFaint, fontSize: 13 }}>
                         No parameters match this view.
                       </td>
                     </tr>
@@ -1685,17 +1765,17 @@ export default function SAPProfileComparator() {
               </table>
             </div>
           </div>
-          <div style={{ fontSize: 11.5, color: "#9aa1b0", marginTop: 8 }}>
+          <div style={{ fontSize: 11.5, color: t.textFaint, marginTop: 8 }}>
             Showing {filteredRows.length} of {rows.length} parameters. Data stays in this browser tab only — export a report or save a comparison to keep it.
           </div>
         </>
       )}
 
-      <div style={{ marginTop: 32, paddingTop: 16, borderTop: "1px solid #e2e5eb", textAlign: "center", fontSize: 11.5, color: "#9aa1b0" }}>
+      <div style={{ marginTop: 32, paddingTop: 16, borderTop: `1px solid ${t.border}`, textAlign: "center", fontSize: 11.5, color: t.textFaint }}>
         SAP Profile Analyzer · Built by {BRAND_NAME} ·{" "}
-        <a href={`mailto:${BRAND_EMAIL}`} style={{ color: "#9aa1b0" }}>{BRAND_EMAIL}</a>
+        <a href={`mailto:${BRAND_EMAIL}`} style={{ color: t.textFaint }}>{BRAND_EMAIL}</a>
         {" · "}
-        <a href={BRAND_LINKEDIN} target="_blank" rel="noopener noreferrer" style={{ color: "#9aa1b0" }}>{BRAND_LINKEDIN}</a>
+        <a href={BRAND_LINKEDIN} target="_blank" rel="noopener noreferrer" style={{ color: t.textFaint }}>{BRAND_LINKEDIN}</a>
       </div>
     </div>
   );
