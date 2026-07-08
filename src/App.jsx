@@ -636,10 +636,6 @@ export default function SAPProfileComparator() {
     }
   }, [theme]);
 
-  const THEME_ORDER = ["light", "dark", "colorblind"];
-  const cycleTheme = () => {
-    setTheme((prev) => THEME_ORDER[(THEME_ORDER.indexOf(prev) + 1) % THEME_ORDER.length]);
-  };
   const t = THEMES[theme];
 
   const handleFiles = useCallback(async (fileList) => {
@@ -1291,17 +1287,42 @@ export default function SAPProfileComparator() {
           </div>
           <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0, letterSpacing: "-0.01em", color: t.textPrimary }}>SAP Profile Analyzer</h1>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button
-            onClick={cycleTheme}
-            title={`Theme: ${theme === "light" ? "Light" : theme === "dark" ? "Dark" : "Colorblind-safe"} (click to switch)`}
-            style={{ display: "flex", alignItems: "center", gap: 6, background: t.panelBg, border: `1px solid ${t.border}`, borderRadius: 8, padding: "7px 12px", fontSize: 12.5, color: t.textSecondary }}
-          >
-            {theme === "light" && <Sun size={13} />}
-            {theme === "dark" && <Moon size={13} />}
-            {theme === "colorblind" && <Contrast size={13} />}
-            {theme === "light" ? "Light" : theme === "dark" ? "Dark" : "Colorblind-safe"}
-          </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div role="group" aria-label="Theme" style={{ display: "flex", background: t.panelBgAlt, border: `1px solid ${t.border}`, borderRadius: 8, padding: 3, gap: 2 }}>
+            <button
+              onClick={() => setTheme("light")}
+              title="Light theme"
+              style={{
+                display: "flex", alignItems: "center", justifyContent: "center", width: 28, height: 28,
+                borderRadius: 6, border: "none", background: theme === "light" ? t.accentBg : "transparent",
+                color: theme === "light" ? t.accent : t.textFaint,
+              }}
+            >
+              <Sun size={14} />
+            </button>
+            <button
+              onClick={() => setTheme("dark")}
+              title="Dark theme"
+              style={{
+                display: "flex", alignItems: "center", justifyContent: "center", width: 28, height: 28,
+                borderRadius: 6, border: "none", background: theme === "dark" ? t.accentBg : "transparent",
+                color: theme === "dark" ? t.accent : t.textFaint,
+              }}
+            >
+              <Moon size={14} />
+            </button>
+            <button
+              onClick={() => setTheme("colorblind")}
+              title="Colorblind-safe theme"
+              style={{
+                display: "flex", alignItems: "center", justifyContent: "center", width: 28, height: 28,
+                borderRadius: 6, border: "none", background: theme === "colorblind" ? t.accentBg : "transparent",
+                color: theme === "colorblind" ? t.accent : t.textFaint,
+              }}
+            >
+              <Contrast size={14} />
+            </button>
+          </div>
           <button
             onClick={exportSession}
             disabled={!profiles.length}
