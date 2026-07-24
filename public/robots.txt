@@ -1,2 +1,4 @@
 User-agent: *
 Allow: /
+
+Sitemap: https://sap-profile-analyzer.vercel.app/sitemap.xml
